@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Djøf Forlag XML Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
+    <script>
+      // Prevents FOUC by setting theme class before React loads
+      if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    </script>
+    <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style id="dynamic-styles"></style>
+    <style>
+      /* CSS for placeholder text in empty contenteditables */
+      .ProseMirror p.is-editor-empty:first-child::before {
+        content: attr(data-placeholder);
+        float: left;
+        color: #9ca3af; /* Tailwind gray-400 */
+        pointer-events: none;
+        height: 0;
+      }
+      .dark .ProseMirror p.is-editor-empty:first-child::before {
+        color: #6b7280; /* Tailwind gray-500 */
+      }
+      
+      /* Base editor styling */
+      .ProseMirror {
+        outline: none;
+        overflow-wrap: break-word;
+        white-space: pre-wrap; /* Recommended by ProseMirror for correct whitespace handling */
+      }
+
+      /* Visual cue for node selection */
+      .ProseMirror-selectednode {
+        outline: 2px solid #3B82F6; /* blue-500 */
+        background-color: rgba(59, 130, 246, 0.1);
+      }
+      
+      /* Page styling for editor view */
+      .editor-container {
+        margin-left: auto;
+        margin-right: auto;
+        background: #fff;
+        border-radius: 1px;
+      }
+      
+      /* CSS for nested lists */
+      .prosemirror-editor {
+        counter-reset: ol-counter-0;
+      }
+      [data-style*="list_item"] {
+        display: list-item;
+        list-style: none;
+        position: relative;
+      }
+
+      [data-style*="list_item"]::before {
+        position: absolute;
+        left: -1.5rem; /* Position number outside the content flow */
+        text-align: right;
+        width: 1.2rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Indentation for nested lists */
+      [data-style*="list_item"][data-level="0"] { padding-left: 1.5rem; }
+      [data-style*="list_item"][data-level="1"] { padding-left: 3rem; }
+      [data-style*="list_item"][data-level="2"] { padding-left: 4.5rem; }
+
+      /* For reversed lists with pre-calculated numbers from JS */
+      [data-display-number]::before {
+        content: attr(data-display-number) " ";
+      }
+
+      /* Unordered List styles */
+      [data-style="unordered_list_item"]::before { content: "•"; }
+      [data-style="unordered_list_item"][data-level="1"]::before { content: "◦"; }
+      [data-style="unordered_list_item"][data-level="2"]::before { content: "▪"; }
+
+      /* Custom Unordered List styles */
+      [data-style="unordered_list_item"][data-list-style="disc"]::before { content: "•"; }
+      [data-style="unordered_list_item"][data-list-style="circle"]::before { content: "◦"; }
+      [data-style="unordered_list_item"][data-list-style="square"]::before { content: "▪"; }
+      
+      /* Ordered List styles with nested counters */
+      [data-style="ordered_list_item"][data-level="0"] { counter-reset: ol-counter-1; }
+      [data-style="ordered_list_item"][data-level="0"]::before {
+        counter-increment: ol-counter-0;
+        content: counter(ol-counter-0) ". ";
+      }
+      [data-style="ordered_list_item"][data-level="1"] { counter-reset: ol-counter-2; }
+      [data-style="ordered_list_item"][data-level="1"]::before {
+        counter-increment: ol-counter-1;
+        content: counter(ol-counter-1, lower-alpha) ". ";
+      }
+      [data-style="ordered_list_item"][data-level="2"] { counter-reset: ol-counter-3; }
+      [data-style="ordered_list_item"][data-level="2"]::before {
+        counter-increment: ol-counter-2;
+        content: counter(ol-counter-2, lower-roman) ". ";
+      }
+
+      /* Custom Ordered List styles */
+      [data-style="ordered_list_item"][data-level="0"][data-list-style="decimal"]::before { content: counter(ol-counter-0, decimal) ". "; }
+      [data-style="ordered_list_item"][data-level="0"][data-list-style="lower-alpha"]::before { content: counter(ol-counter-0, lower-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="0"][data-list-style="upper-alpha"]::before { content: counter(ol-counter-0, upper-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="0"][data-list-style="lower-roman"]::before { content: counter(ol-counter-0, lower-roman) ". "; }
+      [data-style="ordered_list_item"][data-level="0"][data-list-style="upper-roman"]::before { content: counter(ol-counter-0, upper-roman) ". "; }
+
+      [data-style="ordered_list_item"][data-level="1"][data-list-style="decimal"]::before { content: counter(ol-counter-1, decimal) ". "; }
+      [data-style="ordered_list_item"][data-level="1"][data-list-style="lower-alpha"]::before { content: counter(ol-counter-1, lower-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="1"][data-list-style="upper-alpha"]::before { content: counter(ol-counter-1, upper-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="1"][data-list-style="lower-roman"]::before { content: counter(ol-counter-1, lower-roman) ". "; }
+      [data-style="ordered_list_item"][data-level="1"][data-list-style="upper-roman"]::before { content: counter(ol-counter-1, upper-roman) ". "; }
+      
+      [data-style="ordered_list_item"][data-level="2"][data-list-style="decimal"]::before { content: counter(ol-counter-2, decimal) ". "; }
+      [data-style="ordered_list_item"][data-level="2"][data-list-style="lower-alpha"]::before { content: counter(ol-counter-2, lower-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="2"][data-list-style="upper-alpha"]::before { content: counter(ol-counter-2, upper-alpha) ". "; }
+      [data-style="ordered_list_item"][data-level="2"][data-list-style="lower-roman"]::before { content: counter(ol-counter-2, lower-roman) ". "; }
+      [data-style="ordered_list_item"][data-level="2"][data-list-style="upper-roman"]::before { content: counter(ol-counter-2, upper-roman) ". "; }
+      
+      /* Style for markerless lists */
+      [data-style*="list_item"][data-list-style="none"]::before {
+        content: "";
+      }
+
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.24.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.417.0",
+    "prosemirror-model": "https://aistudiocdn.com/prosemirror-model@^1.22.0",
+    "prosemirror-state": "https://aistudiocdn.com/prosemirror-state@^1.4.3",
+    "prosemirror-view": "https://aistudiocdn.com/prosemirror-view@^1.33.6",
+    "prosemirror-keymap": "https://aistudiocdn.com/prosemirror-keymap@^1.2.2",
+    "prosemirror-commands": "https://aistudiocdn.com/prosemirror-commands@^1.5.2",
+    "prosemirror-schema-basic": "https://aistudiocdn.com/prosemirror-schema-basic@^1.2.2",
+    "prosemirror-schema-list": "https://aistudiocdn.com/prosemirror-schema-list@^1.3.0",
+    "prosemirror-history": "https://aistudiocdn.com/prosemirror-history@^1.3.0",
+    "prosemirror-inputrules": "https://aistudiocdn.com/prosemirror-inputrules@^1.2.1",
+    "prosemirror-dropcursor": "https://aistudiocdn.com/prosemirror-dropcursor@^1.8.1",
+    "prosemirror-gapcursor": "https://aistudiocdn.com/prosemirror-gapcursor@^1.3.2"
+  }
+}
+</script>
+</head>
+  <body class="bg-gray-100 dark:bg-gray-900">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
