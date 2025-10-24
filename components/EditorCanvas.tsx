@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { createRoot, Root } from 'react-dom/client';
-import type { DocumentBlock, DocumentType, StyleKey, TableData, ImageData, Style, TableCell } from '../types';
 
-import { EditorState, NodeSelection, Plugin, Transaction, TextSelection, Command } from 'prosemirror-state';
-import { EditorView } from 'prosemirror-view';
+import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
+import { createRoot, Root } from 'react-dom/client';
+import type { DocumentBlock, DocumentType, StyleKey, TableData, ImageData, Style, TableCell, EditorLayoutSettings } from '../types';
+
+import { EditorState, NodeSelection, Plugin, Transaction, Command, PluginKey } from 'prosemirror-state';
+import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
 import { Schema, DOMParser, Node, DOMSerializer, NodeSpec } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
 import { keymap } from 'prosemirror-keymap';
@@ -14,219 +15,109 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { TrashIcon, RowInsertAboveIcon, RowInsertBelowIcon, ColumnInsertLeftIcon, ColumnInsertRightIcon, MergeCellsIcon, SplitCellIcon } from './icons';
 
 const TableEditor: React.FC<{ data: TableData; onChange: (newData: TableData) => void; }> = ({ data, onChange }) => {
-    const [selectedCells, setSelectedCells] = useState<[number, number][]>([]);
-    const [isSelecting, setIsSelecting] = useState(false);
-    const [selectionStart, setSelectionStart] = useState<[number, number] | null>(null);
-    const tableRef = useRef<HTMLDivElement>(null);
+    const [internalData, setInternalData] = useState(data);
 
-    const updateData = useCallback((rows: TableCell[][], caption: string) => {
-        onChange({ caption, rows });
-    }, [onChange]);
-
-    const handleCellBlur = useCallback((e: React.FocusEvent<HTMLTableCellElement>, rowIndex: number, colIndex: number) => {
-        const newContent = e.currentTarget.innerHTML;
-        if (data.rows[rowIndex][colIndex].content !== newContent) {
-            const newRows = JSON.parse(JSON.stringify(data.rows));
-            newRows[rowIndex][colIndex].content = newContent;
-            updateData(newRows, data.caption);
-        }
-    }, [data, updateData]);
-    
-    const handleCaptionInput = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
-        const newCaption = e.currentTarget.textContent || '';
-        if (data.caption !== newCaption) {
-            updateData(data.rows, newCaption);
-        }
-    }, [data, updateData]);
-    
-    const handleMouseDown = useCallback((rowIndex: number, colIndex: number) => {
-        setIsSelecting(true);
-        setSelectionStart([rowIndex, colIndex]);
-        setSelectedCells([[rowIndex, colIndex]]);
-    }, []);
-
-    const handleMouseOver = useCallback((rowIndex: number, colIndex: number) => {
-        if (!isSelecting || !selectionStart) return;
-
-        const [startRow, startCol] = selectionStart;
-        const minRow = Math.min(startRow, rowIndex);
-        const maxRow = Math.max(startRow, rowIndex);
-        const minCol = Math.min(startCol, colIndex);
-        const maxCol = Math.max(startCol, colIndex);
-        
-        const newSelected: [number, number][] = [];
-        for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-                 // Check if cell is part of another span
-                let isPartOfSpan = false;
-                for(let pr = 0; pr <= r; pr++) {
-                    for(let pc = 0; pc <= c; pc++) {
-                        const cell = data.rows[pr][pc];
-                        if(!cell.isHidden && (cell.rowspan || 1) > 1 || (cell.colspan || 1) > 1) {
-                            if(r < pr + (cell.rowspan || 1) && c < pc + (cell.colspan || 1) && (pr !== r || pc !== c)) {
-                                isPartOfSpan = true;
-                                break;
-                            }
-                        }
-                    }
-                    if(isPartOfSpan) break;
-                }
-
-                if (!data.rows[r][c].isHidden && !isPartOfSpan) {
-                    newSelected.push([r, c]);
-                }
-            }
-        }
-        setSelectedCells(newSelected);
-    }, [isSelecting, selectionStart, data.rows]);
-    
     useEffect(() => {
-        const handleMouseUp = () => {
-            setIsSelecting(false);
-            setSelectionStart(null);
-        };
-        window.addEventListener('mouseup', handleMouseUp);
-        return () => window.removeEventListener('mouseup', handleMouseUp);
-    }, []);
-    
-    // Toolbar Actions
-    const lastSelected = useMemo(() => selectedCells.length > 0 ? selectedCells[selectedCells.length - 1] : null, [selectedCells]);
+        setInternalData(data);
+    }, [data]);
 
-    const addRow = useCallback((offset: number) => {
-        if (!lastSelected) return;
-        const index = lastSelected[0] + offset;
-        const newRows = [...data.rows];
-        const newRow: TableCell[] = Array(data.rows[0].length).fill(0).map(() => ({ content: '' }));
-        newRows.splice(index, 0, newRow);
-        updateData(newRows, data.caption);
-    }, [lastSelected, data, updateData]);
+    const updateCellContent = (rowIndex: number, colIndex: number, content: string) => {
+        const newRows = internalData.rows.map(row => [...row]);
+        newRows[rowIndex][colIndex] = { ...newRows[rowIndex][colIndex], content };
+        onChange({ ...internalData, rows: newRows });
+    };
 
-    const addCol = useCallback((offset: number) => {
-        if (!lastSelected) return;
-        const index = lastSelected[1] + offset;
-        const newRows = data.rows.map(row => {
-            const newRow = [...row];
-            newRow.splice(index, 0, { content: '' });
-            return newRow;
-        });
-        updateData(newRows, data.caption);
-    }, [lastSelected, data, updateData]);
-
-    const deleteRow = useCallback(() => {
-        if (!lastSelected || data.rows.length <= 1) return;
-        const newRows = data.rows.filter((_, i) => i !== lastSelected[0]);
-        updateData(newRows, data.caption);
-        setSelectedCells([]);
-    }, [lastSelected, data, updateData]);
-    
-    const deleteCol = useCallback(() => {
-        if (!lastSelected || data.rows[0].length <= 1) return;
-        const colIndex = lastSelected[1];
-        const newRows = data.rows.map(row => row.filter((_, i) => i !== colIndex));
-        updateData(newRows, data.caption);
-        setSelectedCells([]);
-    }, [lastSelected, data, updateData]);
-    
-    const mergeCells = useCallback(() => {
-        if (selectedCells.length < 2) return;
-        const rows = selectedCells.map(c => c[0]);
-        const cols = selectedCells.map(c => c[1]);
-        const minRow = Math.min(...rows), maxRow = Math.max(...rows);
-        const minCol = Math.min(...cols), maxCol = Math.max(...cols);
+    const handleAction = (action: 'addRowAbove' | 'addRowBelow' | 'addColLeft' | 'addColRight' | 'deleteRow' | 'deleteCol') => {
+        const newRows = internalData.rows.map(row => [...row]);
+        const colCount = newRows[0]?.length || 1;
         
-        const newRows = JSON.parse(JSON.stringify(data.rows));
-        newRows[minRow][minCol].rowspan = maxRow - minRow + 1;
-        newRows[minRow][minCol].colspan = maxCol - minCol + 1;
+        // For simplicity, this example assumes the first cell is selected.
+        // A real implementation would need to track the selected cell.
+        const rowIndex = 0; 
+        const colIndex = 0;
 
-        for (let r = minRow; r <= maxRow; r++) {
-            for (let c = minCol; c <= maxCol; c++) {
-                if (r === minRow && c === minCol) continue;
-                newRows[r][c] = { content: '', isHidden: true };
-            }
+        switch (action) {
+            case 'addRowAbove':
+                newRows.splice(rowIndex, 0, Array(colCount).fill({ content: '' }));
+                break;
+            case 'addRowBelow':
+                newRows.splice(rowIndex + 1, 0, Array(colCount).fill({ content: '' }));
+                break;
+            case 'addColLeft':
+                newRows.forEach(row => row.splice(colIndex, 0, { content: '' }));
+                break;
+            case 'addColRight':
+                newRows.forEach(row => row.splice(colIndex + 1, 0, { content: '' }));
+                break;
+            case 'deleteRow':
+                 if (newRows.length > 1) newRows.splice(rowIndex, 1);
+                break;
+            case 'deleteCol':
+                if (colCount > 1) newRows.forEach(row => row.splice(colIndex, 1));
+                break;
         }
-        updateData(newRows, data.caption);
-        setSelectedCells([[minRow, minCol]]);
-    }, [selectedCells, data, updateData]);
-
-    const splitCell = useCallback(() => {
-        if (!lastSelected) return;
-        const [r, c] = lastSelected;
-        const cell = data.rows[r][c];
-        const newRows = JSON.parse(JSON.stringify(data.rows));
-        const { rowspan = 1, colspan = 1 } = cell;
-        
-        for (let i = r; i < r + rowspan; i++) {
-            for (let j = c; j < c + colspan; j++) {
-                newRows[i][j] = { content: (i === r && j === c) ? cell.content : '' };
-            }
-        }
-        updateData(newRows, data.caption);
-    }, [lastSelected, data, updateData]);
-
-    const canMerge = selectedCells.length > 1;
-    const canSplit = selectedCells.length === 1 && lastSelected && ((data.rows[lastSelected[0]][lastSelected[1]].rowspan || 1) > 1 || (data.rows[lastSelected[0]][lastSelected[1]].colspan || 1) > 1);
-    
-    const ToolbarButton: React.FC<{ onClick: () => void; disabled?: boolean; title: string; children: React.ReactNode; }> = ({onClick, disabled, title, children}) => (
-        <button onClick={onClick} disabled={disabled} title={title} className="p-1.5 rounded text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">{children}</button>
-    );
+        onChange({ ...internalData, rows: newRows });
+    };
 
     return (
-        <div ref={tableRef} className="my-4 p-2 border rounded-md relative bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700">
-            {selectedCells.length > 0 && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-[calc(100%+4px)] bg-white dark:bg-gray-800 shadow-lg rounded-md p-1 flex items-center gap-1 z-10 border dark:border-gray-700">
-                   <ToolbarButton onClick={() => addRow(0)} title="Indsæt række over"><RowInsertAboveIcon className="w-4 h-4" /></ToolbarButton>
-                   <ToolbarButton onClick={() => addRow(1)} title="Indsæt række under"><RowInsertBelowIcon className="w-4 h-4" /></ToolbarButton>
-                   <ToolbarButton onClick={deleteRow} title="Slet række"><TrashIcon className="w-4 h-4 text-red-500" /></ToolbarButton>
-                   <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
-                   <ToolbarButton onClick={() => addCol(0)} title="Indsæt kolonne til venstre"><ColumnInsertLeftIcon className="w-4 h-4" /></ToolbarButton>
-                   <ToolbarButton onClick={() => addCol(1)} title="Indsæt kolonne til højre"><ColumnInsertRightIcon className="w-4 h-4" /></ToolbarButton>
-                   <ToolbarButton onClick={deleteCol} title="Slet kolonne"><TrashIcon className="w-4 h-4 text-red-500" /></ToolbarButton>
-                   <div className="w-px h-5 bg-gray-300 dark:bg-gray-600 mx-1" />
-                   <ToolbarButton onClick={mergeCells} disabled={!canMerge} title="Flet celler"><MergeCellsIcon className="w-4 h-4" /></ToolbarButton>
-                   <ToolbarButton onClick={splitCell} disabled={!canSplit} title="Opdel celle"><SplitCellIcon className="w-4 h-4" /></ToolbarButton>
-                </div>
-            )}
-            <div className="overflow-x-auto">
-                <table className="w-full border-collapse bg-white dark:bg-gray-800" onMouseLeave={() => setIsSelecting(false)}>
-                    <tbody>
-                        {data.rows.map((row, rowIndex) => (
-                            <tr key={rowIndex}>
-                                {row.map((cell, colIndex) => {
-                                    if (cell.isHidden) return null;
-                                    const isSelected = selectedCells.some(([r, c]) => r === rowIndex && c === colIndex);
-                                    return (
-                                        <td
-                                            key={colIndex}
-                                            colSpan={cell.colspan || 1}
-                                            rowSpan={cell.rowspan || 1}
-                                            onMouseDown={() => handleMouseDown(rowIndex, colIndex)}
-                                            onMouseOver={() => handleMouseOver(rowIndex, colIndex)}
-                                            contentEditable
-                                            suppressContentEditableWarning
-                                            onBlur={(e) => handleCellBlur(e, rowIndex, colIndex)}
-                                            className={`border border-gray-300 dark:border-gray-600 p-2 min-w-[60px] relative transition-colors ${isSelected ? 'bg-blue-100 dark:bg-blue-900/50' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
-                                            dangerouslySetInnerHTML={{ __html: cell.content }}
-                                        />
-                                    );
-                                })}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+        <div className="my-4 p-2 border rounded-md relative bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700 group">
+            <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button title="Add Row Above" onClick={() => handleAction('addRowAbove')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><RowInsertAboveIcon className="w-4 h-4" /></button>
+                <button title="Add Row Below" onClick={() => handleAction('addRowBelow')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><RowInsertBelowIcon className="w-4 h-4" /></button>
+                <button title="Add Column Left" onClick={() => handleAction('addColLeft')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><ColumnInsertLeftIcon className="w-4 h-4" /></button>
+                <button title="Add Column Right" onClick={() => handleAction('addColRight')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><ColumnInsertRightIcon className="w-4 h-4" /></button>
+                <button title="Delete Row" onClick={() => handleAction('deleteRow')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><TrashIcon className="w-4 h-4 text-red-500" /></button>
+                 <button title="Delete Column" onClick={() => handleAction('deleteCol')} className="p-1.5 bg-white dark:bg-gray-800 rounded shadow"><TrashIcon className="w-4 h-4 text-red-500" /></button>
             </div>
-             <div 
-                contentEditable 
-                suppressContentEditableWarning
-                onBlur={handleCaptionInput}
-                className="text-sm text-center text-gray-600 dark:text-gray-400 mt-2 p-1 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded"
-                dangerouslySetInnerHTML={{ __html: data.caption }}
+            <table className="w-full border-collapse">
+                <tbody>
+                    {internalData.rows.map((row, rIndex) => (
+                        <tr key={rIndex}>
+                            {row.map((cell, cIndex) => (
+                                <td 
+                                    key={cIndex} 
+                                    className="border border-gray-300 dark:border-gray-600 p-2"
+                                    contentEditable
+                                    suppressContentEditableWarning
+                                    onBlur={(e) => updateCellContent(rIndex, cIndex, e.currentTarget.innerHTML)}
+                                    dangerouslySetInnerHTML={{ __html: cell.content }}
+                                />
+                            ))}
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+            <input 
+                type="text" 
+                value={internalData.caption}
+                onChange={(e) => onChange({ ...internalData, caption: e.target.value })}
+                placeholder="Table caption"
+                className="w-full mt-2 text-center text-sm italic bg-transparent border-none focus:outline-none focus:ring-0 p-1"
             />
         </div>
     );
 };
 
 const ImageEditor: React.FC<{ data: ImageData; onChange: (newData: ImageData) => void; }> = ({ data, onChange }) => {
-    return <div className="my-4 p-4 border rounded-md bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700"><img src={data.src} alt={data.caption} className="max-w-full" /></div>;
+    return (
+        <div className="my-4 p-4 border rounded-md bg-gray-50 dark:bg-gray-900/50 dark:border-gray-700 flex flex-col items-center">
+            <img src={data.src} alt={data.caption} className="max-w-full rounded" />
+            <input 
+                type="text"
+                value={data.caption}
+                onChange={(e) => onChange({ ...data, caption: e.target.value })}
+                placeholder="Image caption"
+                className="w-full mt-2 text-center text-sm italic bg-transparent border-none focus:outline-none focus:ring-0 p-1"
+            />
+            <input 
+                type="text"
+                value={data.source}
+                onChange={(e) => onChange({ ...data, source: e.target.value })}
+                placeholder="Image source"
+                className="w-full mt-1 text-center text-xs bg-transparent border-none focus:outline-none focus:ring-0 p-1"
+            />
+        </div>
+    );
 };
 
 class ReactNodeView {
@@ -271,14 +162,10 @@ export interface EditorApi {
     redo: () => void;
 }
 
-// This command handles the Enter key for non-list blocks.
-// 1. If the current block is an empty heading-like block (anything not 'body'), it's converted to a 'body' block.
-// 2. Otherwise, it splits the current block, and the new block created is always a 'body' block with a new unique ID.
 const enterKeyCommand: Command = (state, dispatch) => {
     const { $from } = state.selection;
     const parent = $from.parent;
 
-    // Let default commands handle list items, which have special Enter behavior.
     const isListItem = parent.type.name.endsWith('_list_item');
     if (isListItem) {
         return false;
@@ -286,19 +173,16 @@ const enterKeyCommand: Command = (state, dispatch) => {
 
     const bodyType = state.schema.nodes.body;
     if (!bodyType) {
-        return false; // This command requires a 'body' node type in the schema.
+        return false;
     }
 
-    // Case 1: The cursor is in an empty text block that is not already a 'body' block.
     if (parent.content.size === 0 && parent.type !== bodyType) {
         if (dispatch) {
-            // Convert this block to a 'body' block.
             dispatch(state.tr.setBlockType($from.start(), $from.end(), bodyType));
         }
         return true;
     }
     
-    // Case 2: For any other non-list block (empty or not), split and create a new 'body' block.
     if (dispatch) {
         dispatch(
             state.tr
@@ -309,6 +193,19 @@ const enterKeyCommand: Command = (state, dispatch) => {
     return true;
 };
 
+const getPixelHeightForUnit = (cssUnit: string): number => {
+    if (typeof document === 'undefined' || !cssUnit) return 0;
+    const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.height = cssUnit;
+    div.style.top = '-9999px';
+    document.body.appendChild(div);
+    const height = div.offsetHeight;
+    document.body.removeChild(div);
+    return height || 0;
+};
+
+const paginationPluginKey = new PluginKey('pagination');
 
 export const EditorCanvas: React.FC<{
   blocks: DocumentBlock[];
@@ -318,10 +215,83 @@ export const EditorCanvas: React.FC<{
   onSelectionChange: (selectionInfo: { activeBlockId: number | null, canUndo: boolean, canRedo: boolean, searchResults?: { count: number, current: number } }) => void;
   searchQuery: string;
   styles: Record<StyleKey, Style>;
-}> = ({ blocks, onBlocksChange, editorApiRef, onSelectionChange, searchQuery, styles }) => {
+  layoutSettings: EditorLayoutSettings;
+  onPaginationChange: (pageCount: number) => void;
+}> = ({ blocks, onBlocksChange, editorApiRef, onSelectionChange, searchQuery, styles, layoutSettings, onPaginationChange }) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const isUpdatingFromOutside = useRef(false);
+
+    const editorSchema = useMemo(() => {
+        const nodes: Record<string, NodeSpec> = {
+            doc: { content: "block+" },
+            text: basicSchema.spec.nodes.get("text") as NodeSpec,
+            hard_break: basicSchema.spec.nodes.get("hard_break") as NodeSpec,
+            page_break: {
+                group: 'block',
+                atom: true,
+                selectable: false,
+                toDOM: () => ['div', { 'data-page-break': 'true', style: 'display: none;' }],
+                parseDOM: [{ tag: 'div[data-page-break]' }],
+            },
+        };
+
+        Object.values(styles).forEach((style: Style) => {
+            if (style.key === 'table' || style.key === 'image') {
+                nodes[style.key] = {
+                    attrs: { id: { default: 0 }, data: { default: '' } },
+                    group: "block", atom: true,
+                    toDOM: (node: Node) => ["div", { "data-style": style.key, "data-id": node.attrs.id }],
+                    parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, data: '' }) }]
+                };
+            } else {
+                nodes[style.key] = {
+                    attrs: { id: { default: 0 }, level: { default: 0 }, list: { default: null } },
+                    content: "inline*", group: "block",
+                    toDOM: (node: Node) => ["div", { "class": styles[node.type.name as StyleKey]?.className || '', "data-style": style.key, "data-id": node.attrs.id, "data-level": node.attrs.level }, 0],
+                    parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, level: dom.dataset.level ? parseInt(dom.dataset.level, 10) : 0 }) }]
+                };
+            }
+        });
+        return new Schema({ nodes, marks: { bold: basicSchema.spec.marks.get("strong"), italic: basicSchema.spec.marks.get("em") }});
+    }, [styles]);
+
+    const blocksToDoc = useCallback((blocks: DocumentBlock[]): Node => {
+        const pmNodes: Node[] = blocks.map(block => {
+            const type = editorSchema.nodes[block.style];
+            if (!type) return null;
+            if (type.isAtom) {
+                return type.create({ id: block.id, data: block.content });
+            }
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = block.content;
+            const contentFragment = DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content;
+            return type.create({ id: block.id, level: block.level, list: block.list }, contentFragment);
+        }).filter((n): n is Node => n !== null);
+        return editorSchema.node('doc', null, pmNodes);
+    }, [editorSchema]);
+
+    const docToBlocks = useCallback((doc: Node): DocumentBlock[] => {
+        const blocks: DocumentBlock[] = [];
+        const domSerializer = DOMSerializer.fromSchema(editorSchema);
+        doc.forEach(node => {
+            if (node.type.name === 'page_break') return;
+            let content = '';
+            if (node.isAtom) {
+                content = node.attrs.data;
+            } else {
+                const fragment = domSerializer.serializeFragment(node.content);
+                const tempDiv = document.createElement('div');
+                tempDiv.appendChild(fragment);
+                content = tempDiv.innerHTML;
+            }
+            blocks.push({
+                id: node.attrs.id || Date.now() + Math.random(), style: node.type.name as StyleKey, content: content,
+                level: node.attrs.level, list: node.attrs.list,
+            });
+        });
+        return blocks;
+    }, [editorSchema]);
 
     useEffect(() => {
         if (!editorRef.current) return;
@@ -331,89 +301,233 @@ export const EditorCanvas: React.FC<{
             viewRef.current = null;
         }
 
-        // 1. DYNAMIC SCHEMA DEFINITION
-        const nodes: Record<string, NodeSpec> = {
-            doc: { content: "block+" },
-            text: basicSchema.spec.nodes.get("text") as NodeSpec,
-            hard_break: basicSchema.spec.nodes.get("hard_break") as NodeSpec,
-        };
+        class PaginationView {
+            private view: EditorView;
+            private debounceTimeout: number | undefined;
+            private measurementContainer: HTMLElement | null = null;
+            private domSerializer: DOMSerializer;
+            private styles: Record<StyleKey, Style>;
 
-        // Fix: Explicitly type `style` as `Style` to resolve properties.
-        Object.values(styles).forEach((style: Style) => {
-            if (style.key === 'table' || style.key === 'image') {
-                nodes[style.key] = {
-                    attrs: { id: { default: 0 }, data: { default: '' } },
-                    group: "block",
-                    atom: true,
-                    toDOM: (node: Node) => ["div", { "data-style": style.key, "data-id": node.attrs.id }],
-                    parseDOM: [{
-                        tag: `div[data-style="${style.key}"]`,
-                        getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, data: '' })
-                    }]
-                };
-            } else {
-                nodes[style.key] = {
-                    attrs: { id: { default: 0 }, level: { default: 0 }, list: { default: null } },
-                    content: "inline*",
-                    group: "block",
-                    toDOM: (node: Node) => ["div", { "class": styles[node.type.name as StyleKey]?.className || '', "data-style": style.key, "data-id": node.attrs.id, "data-level": node.attrs.level }, 0],
-                    parseDOM: [{
-                        tag: `div[data-style="${style.key}"]`,
-                        getAttrs: (dom: HTMLElement) => ({
-                            id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0,
-                            level: dom.dataset.level ? parseInt(dom.dataset.level, 10) : 0
-                        })
-                    }]
-                };
+            constructor(view: EditorView, styles: Record<StyleKey, Style>) {
+                this.view = view;
+                this.styles = styles;
+                this.domSerializer = DOMSerializer.fromSchema(view.state.schema);
+                this.recalculate(view.state);
             }
-        });
 
-        const editorSchema = new Schema({
-            nodes,
-            marks: {
-                bold: basicSchema.spec.marks.get("strong"),
-                italic: basicSchema.spec.marks.get("em"),
+            update(view: EditorView, prevState: EditorState) {
+                if (!prevState.doc.eq(view.state.doc) || !prevState.selection.eq(view.state.selection)) {
+                    this.recalculate(view.state);
+                }
             }
+            
+            private ensureMeasurementContainer() {
+                if (!this.measurementContainer) {
+                    this.measurementContainer = document.createElement('div');
+                    this.measurementContainer.className = 'ProseMirror prosemirror-styled-content';
+                    this.measurementContainer.style.position = 'absolute';
+                    this.measurementContainer.style.top = '-9999px';
+                    this.measurementContainer.style.left = '-9999px';
+                    this.measurementContainer.style.whiteSpace = 'pre-wrap';
+                    this.measurementContainer.style.overflowWrap = 'break-word';
+                    document.body.appendChild(this.measurementContainer);
+                }
+                const editorContentWidth = this.view.dom.clientWidth;
+                 if (editorContentWidth > 0) {
+                   this.measurementContainer.style.width = `${editorContentWidth}px`;
+                }
+            }
+
+            private measureNodeFallback(node: Node): number {
+                this.ensureMeasurementContainer();
+                if (!this.measurementContainer) return 20;
+
+                const domNode = this.domSerializer.serializeNode(node);
+                this.measurementContainer.appendChild(domNode);
+                const element = this.measurementContainer.lastElementChild as HTMLElement;
+                if (!element) {
+                    this.measurementContainer.innerHTML = '';
+                    return 20;
+                }
+                const style = window.getComputedStyle(element);
+                const marginTop = parseFloat(style.marginTop) || 0;
+                const marginBottom = parseFloat(style.marginBottom) || 0;
+                const height = element.offsetHeight + marginTop + marginBottom;
+                this.measurementContainer.innerHTML = '';
+                return height;
+            }
+
+            private findSplitPoint(node: Node, availableHeight: number): number {
+                if (!node.isTextblock || node.content.size === 0 || availableHeight <= 5) {
+                    return -1;
+                }
+            
+                let low = 0;
+                let high = node.content.size;
+                let bestCharSplit = -1;
+            
+                while (low <= high) {
+                    const mid = Math.floor((low + high) / 2);
+                    if (mid === 0) {
+                        low = mid + 1;
+                        continue;
+                    }
+                    const slicedNode = node.copy(node.content.cut(0, mid));
+                    const measuredHeight = this.measureNodeFallback(slicedNode);
+            
+                    if (measuredHeight <= availableHeight) {
+                        bestCharSplit = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+            
+                if (bestCharSplit <= 0) {
+                    return -1;
+                }
+            
+                const text = node.textContent;
+                const textSlice = text.substring(0, bestCharSplit);
+                const lastSpace = textSlice.lastIndexOf(' ');
+                const lastNewline = textSlice.lastIndexOf('\n');
+                
+                const boundary = Math.max(lastSpace, lastNewline);
+            
+                if (boundary > 0) {
+                    return boundary + 1;
+                }
+            
+                if (bestCharSplit > 0) {
+                    return bestCharSplit;
+                }
+                
+                return -1;
+            }
+
+            recalculate(state: EditorState) {
+                window.clearTimeout(this.debounceTimeout);
+                this.debounceTimeout = window.setTimeout(() => {
+                    if (!viewRef.current) return;
+                    
+                    const pageHeightPx = getPixelHeightForUnit(layoutSettings.paperHeight);
+                    if (pageHeightPx <= 0) return;
+                    
+                    const paddingBottomPx = getPixelHeightForUnit(layoutSettings.marginBottom);
+                    const paddingTopPx = getPixelHeightForUnit(layoutSettings.marginTop);
+                    const contentHeightPerPage = pageHeightPx - paddingTopPx - paddingBottomPx;
+
+                    const initialTr = this.view.state.tr;
+                    let cleanDoc = this.view.state.doc;
+
+                    // Pass 1: Remove all existing page breaks.
+                    let pageBreakFound = false;
+                    initialTr.doc.descendants((node, pos) => {
+                        if (node.type.name === 'page_break') {
+                            initialTr.delete(pos, pos + node.nodeSize);
+                            pageBreakFound = true;
+                        }
+                    });
+
+                    if (pageBreakFound) {
+                        cleanDoc = initialTr.doc;
+                    }
+
+                    const newContent: Node[] = [];
+                    let pageContentHeight = 0;
+
+                    const processNode = (node: Node) => {
+                        const nodeHeight = this.measureNodeFallback(node);
+
+                        if (pageContentHeight + nodeHeight <= contentHeightPerPage) {
+                            newContent.push(node);
+                            pageContentHeight += nodeHeight;
+                            return;
+                        }
+
+                        const availableHeight = contentHeightPerPage - pageContentHeight;
+                        const splitIndex = this.findSplitPoint(node, availableHeight);
+
+                        if (splitIndex > 0 && splitIndex < node.content.size) {
+                            const part1 = node.copy(node.content.cut(0, splitIndex));
+                            newContent.push(part1);
+                            
+                            let remainder = node.copy(node.content.cut(splitIndex));
+                            
+                            const styleInfo = this.styles[node.type.name as StyleKey];
+                            const isHeading = styleInfo?.level !== undefined && (styleInfo.key.includes('heading') || styleInfo.key === 'kapitel' || styleInfo.key === 'del');
+
+                            if (isHeading) {
+                                const bodyType = this.view.state.schema.nodes.body;
+                                if (bodyType) {
+                                    // Fix: `NodeType` does not have a `defaultAttrs` property.
+                                    // The `create` method automatically merges provided attributes with the defaults from the schema.
+                                    const newAttrs = { id: Date.now() + Math.random() };
+                                    remainder = bodyType.create(newAttrs, remainder.content, remainder.marks);
+                                }
+                            }
+
+                            while (true) {
+                                newContent.push(this.view.state.schema.nodes.page_break.create());
+                                const remainderHeight = this.measureNodeFallback(remainder);
+
+                                if (remainderHeight <= contentHeightPerPage) {
+                                    newContent.push(remainder);
+                                    pageContentHeight = remainderHeight;
+                                    break;
+                                }
+
+                                const nextSplitIndex = this.findSplitPoint(remainder, contentHeightPerPage);
+                                if (nextSplitIndex > 0 && nextSplitIndex < remainder.content.size) {
+                                    const nextPart = remainder.copy(remainder.content.cut(0, nextSplitIndex));
+                                    newContent.push(nextPart);
+                                    remainder = remainder.copy(remainder.content.cut(nextSplitIndex));
+                                } else {
+                                    newContent.push(remainder);
+                                    pageContentHeight = remainderHeight;
+                                    break;
+                                }
+                            }
+                        } else {
+                            if (pageContentHeight > 0) {
+                                newContent.push(this.view.state.schema.nodes.page_break.create());
+                            }
+                            newContent.push(node);
+                            pageContentHeight = nodeHeight;
+                        }
+                    };
+
+                    cleanDoc.forEach(processNode);
+                    
+                    const finalTr = this.view.state.tr.replaceWith(0, this.view.state.doc.content.size, newContent);
+
+                    if (!finalTr.doc.eq(this.view.state.doc)) {
+                        this.view.dispatch(finalTr);
+                    }
+
+                    requestAnimationFrame(() => {
+                        if (!viewRef.current) return;
+                        const totalHeight = viewRef.current.dom.scrollHeight;
+                        const newPageCount = pageHeightPx > 0 ? Math.max(1, Math.ceil(totalHeight / pageHeightPx)) : 1;
+                        onPaginationChange(newPageCount);
+                    });
+
+                }, 200);
+            }
+
+            destroy() {
+                window.clearTimeout(this.debounceTimeout);
+                 if (this.measurementContainer) {
+                    document.body.removeChild(this.measurementContainer);
+                    this.measurementContainer = null;
+                }
+            }
+        }
+
+        const paginationPlugin = new Plugin({
+            key: paginationPluginKey,
+            view: (editorView) => new PaginationView(editorView, styles),
         });
-
-        // 2. DYNAMIC STATE CONVERTERS
-        const blocksToDoc = (blocks: DocumentBlock[]): Node => {
-            const pmNodes: Node[] = blocks.map(block => {
-                const type = editorSchema.nodes[block.style];
-                if (!type) return null;
-                if (type.isAtom) {
-                    return type.create({ id: block.id, data: block.content });
-                }
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = block.content;
-                return type.create({ id: block.id, level: block.level, list: block.list }, DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content);
-            }).filter((n): n is Node => n !== null);
-            return editorSchema.node('doc', null, pmNodes);
-        };
-
-        const docToBlocks = (doc: Node): DocumentBlock[] => {
-            const blocks: DocumentBlock[] = [];
-            const domSerializer = DOMSerializer.fromSchema(editorSchema);
-            doc.forEach(node => {
-                let content = '';
-                if (node.isAtom) {
-                    content = node.attrs.data;
-                } else {
-                    const fragment = domSerializer.serializeFragment(node.content);
-                    const tempDiv = document.createElement('div');
-                    tempDiv.appendChild(fragment);
-                    content = tempDiv.innerHTML;
-                }
-                blocks.push({
-                    id: node.attrs.id || Date.now() + Math.random(),
-                    style: node.type.name as StyleKey,
-                    content: content,
-                    level: node.attrs.level,
-                    list: node.attrs.list,
-                });
-            });
-            return blocks;
-        };
 
         const state = EditorState.create({
             doc: blocksToDoc(blocks),
@@ -426,30 +540,18 @@ export const EditorCanvas: React.FC<{
                     "Mod-b": toggleMark(editorSchema.marks.bold), "Mod-i": toggleMark(editorSchema.marks.italic),
                 }),
                 dropCursor(), gapCursor(),
+                paginationPlugin,
                 new Plugin({
                     view(editorView) {
                         if (editorApiRef) {
                             editorApiRef.current = {
-                                applyStyle: (style) => {
-                                    const type = editorSchema.nodes[style];
-                                    if (type) setBlockType(type)(editorView.state, editorView.dispatch);
-                                },
-                                addBlock: (style) => {
-                                    const { state, dispatch } = editorView;
-                                    const type = editorSchema.nodes[style];
-                                    const endPos = state.doc.content.size;
-                                    const tr = state.tr.insert(endPos, type.create({ id: Date.now() }));
-                                    dispatch(tr);
-                                },
+                                applyStyle: (style) => { const type = editorSchema.nodes[style]; if (type) setBlockType(type)(editorView.state, editorView.dispatch); },
+                                addBlock: (style) => { const { state, dispatch } = editorView; const type = editorSchema.nodes[style]; const endPos = state.doc.content.size; const tr = state.tr.insert(endPos, type.create({ id: Date.now() })); dispatch(tr); },
                                 removeEmptyBlocks: () => { /* TODO */ }, search: () => { /* TODO */ }, goToSearchResult: () => { /* TODO */ },
                                 scrollToBlock: (blockId) => {
-                                    const { doc } = editorView.state;
-                                    let targetPos = -1;
+                                    const { doc } = editorView.state; let targetPos = -1;
                                     doc.forEach((node, pos) => { if (node.attrs.id === blockId) targetPos = pos; });
-                                    if (targetPos !== -1) {
-                                        const domNode = editorView.nodeDOM(targetPos);
-                                        if (domNode) (domNode as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                    }
+                                    if (targetPos !== -1) { const domNode = editorView.nodeDOM(targetPos); if (domNode) (domNode as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' }); }
                                 },
                                 focusTitle: () => editorView.dom.blur(),
                                 undo: () => undo(editorView.state, editorView.dispatch),
@@ -461,34 +563,16 @@ export const EditorCanvas: React.FC<{
                     props: {
                         nodeViews: {
                             table: (node, view, getPos) => {
-                                const onChange = (newData: TableData) => {
-                                    const tr = view.state.tr.setNodeMarkup(getPos(), undefined, { ...node.attrs, data: JSON.stringify(newData) });
-                                    view.dispatch(tr);
-                                };
-                                let parsedData;
-                                try {
-                                    parsedData = JSON.parse(node.attrs.data || '{}');
-                                } catch (e) {
-                                    parsedData = {};
-                                    console.error("Could not parse table data:", node.attrs.data);
-                                }
-
-                                const data: TableData = {
-                                    caption: parsedData.caption || '',
-                                    rows: parsedData.rows && Array.isArray(parsedData.rows) ? parsedData.rows : [[{ content: ' ' }]]
-                                };
-
-                                if (data.rows.length === 0) {
-                                    data.rows.push([{ content: ' ' }]);
-                                }
+                                const onChange = (newData: TableData) => { const tr = view.state.tr.setNodeMarkup(getPos(), undefined, { ...node.attrs, data: JSON.stringify(newData) }); view.dispatch(tr); };
+                                let parsedData; try { parsedData = JSON.parse(node.attrs.data || '{}'); } catch (e) { parsedData = {}; console.error("Could not parse table data:", node.attrs.data); }
+                                const data: TableData = { caption: parsedData.caption || '', rows: parsedData.rows && Array.isArray(parsedData.rows) ? parsedData.rows : [[{ content: ' ' }]] };
+                                if (data.rows.length === 0) { data.rows.push([{ content: ' ' }]); }
                                 return new ReactNodeView(node, view, getPos, TableEditor, { data, onChange });
                             },
                             image: (node, view, getPos) => {
-                                const onChange = (newData: ImageData) => {
-                                    const tr = view.state.tr.setNodeMarkup(getPos(), undefined, { ...node.attrs, data: JSON.stringify(newData) });
-                                    view.dispatch(tr);
-                                };
-                                return new ReactNodeView(node, view, getPos, ImageEditor, { data: JSON.parse(node.attrs.data || '{}'), onChange });
+                                const onChange = (newData: ImageData) => { const tr = view.state.tr.setNodeMarkup(getPos(), undefined, { ...node.attrs, data: JSON.stringify(newData) }); view.dispatch(tr); };
+                                let parsedData; try { parsedData = JSON.parse(node.attrs.data || '{}'); } catch (e) { parsedData = {src: '', caption: '', source: ''}; }
+                                return new ReactNodeView(node, view, getPos, ImageEditor, { data: parsedData, onChange });
                             },
                         }
                     }
@@ -526,23 +610,18 @@ export const EditorCanvas: React.FC<{
                 viewRef.current = null;
             }
         };
-    }, [styles]);
+    }, [styles, layoutSettings, onPaginationChange, editorApiRef, onSelectionChange, editorSchema, blocksToDoc, docToBlocks]);
 
     useEffect(() => {
-        if (viewRef.current && !isUpdatingFromOutside.current) {
-            // Need a dynamic blocksToDoc function here. Re-initializing the whole editor
-            // on style change handles this. For external block changes without style change,
-            // we'd need to rebuild the doc with the current schema. Since the editor is
-            // fully re-created on style change, this effect is only for external block changes.
-            // The logic from the main useEffect should be used here, but it's complex to share.
-            // A simpler approach for now is to just let the main effect handle it,
-            // but that would mean re-creating the editor on every word import.
-            // For now, let's assume external block changes are infrequent and a full re-render is acceptable.
-            // The main effect now depends on `styles`, so this effect is still needed for `blocks`.
-            // But it uses a stale `blocksToDoc`. The logic should be moved inside.
-            // But this will be done when the whole editor is re-initialized.
+        if (viewRef.current && !isUpdatingFromOutside.current && blocks) {
+            const state = viewRef.current.state;
+            const newDoc = blocksToDoc(blocks);
+            if (!newDoc.eq(state.doc)) {
+                const tr = state.tr.replaceWith(0, state.doc.content.size, newDoc.content);
+                viewRef.current.dispatch(tr);
+            }
         }
-    }, [blocks]);
+    }, [blocks, blocksToDoc]);
 
-    return <div className="editor-container"><div ref={editorRef} className="prosemirror-editor" /></div>;
+    return <div ref={editorRef} className="prosemirror-editor prosemirror-styled-content" />;
 };

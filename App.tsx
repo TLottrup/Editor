@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/Header';
 import { StylePalette } from './components/StylePalette';
@@ -76,6 +75,21 @@ const defaultEditorLayout: EditorLayoutSettings = {
 // Fix: Use the imported TabProps interface
 const Tab: React.FC<TabProps> = ({ children }) => <>{children}</>;
 
+const getPixelHeightForUnit = (cssUnit: string): number => {
+    if (typeof document === 'undefined') return 0; // Guard for SSR or non-browser env
+    const div = document.createElement('div');
+    div.style.position = 'absolute';
+    div.style.height = cssUnit;
+    div.style.top = '-9999px';
+    document.body.appendChild(div);
+    const height = div.offsetHeight;
+    document.body.removeChild(div);
+    return height || 0;
+};
+
+const PAGE_GAP_PX = 20;
+
+
 const App: React.FC = () => {
   const [documentType, setDocumentType] = useState<DocumentType | null>(null);
   const [blocks, setBlocks] = useState<DocumentBlock[] | null>(null);
@@ -88,9 +102,7 @@ const App: React.FC = () => {
   const [styles, setStyles] = useState<Record<StyleKey, Style>>(() => {
     try {
       const savedStyles = localStorage.getItem('customStyles');
-      console.log("App.tsx: Loading styles from localStorage (customStyles):", savedStyles);
       const parsedStyles = savedStyles ? JSON.parse(savedStyles) : INITIAL_STYLES;
-      console.log("App.tsx: Initializing styles state with:", parsedStyles);
       return parsedStyles;
     } catch (e) {
       console.error("App.tsx: Failed to load styles from localStorage, using initial styles:", e);
@@ -123,13 +135,9 @@ const App: React.FC = () => {
   const updateAndPersistStyles = useCallback((newStylesAction: React.SetStateAction<Record<StyleKey, Style>>) => {
     setStyles(prevStyles => {
         const resolvedStyles = typeof newStylesAction === 'function' ? newStylesAction(prevStyles) : newStylesAction;
-        console.log("App.tsx: Resolved new styles state for saving:", resolvedStyles);
         try {
             const stylesJson = JSON.stringify(resolvedStyles);
             localStorage.setItem('customStyles', stylesJson);
-            console.log("App.tsx: Storing in localStorage 'customStyles':", stylesJson.substring(0, 200) + (stylesJson.length > 200 ? '...' : ''));
-            const verifiedStyles = localStorage.getItem('customStyles');
-            console.log("App.tsx: Verifying localStorage 'customStyles' immediately after set:", verifiedStyles?.substring(0, 200) + (verifiedStyles && verifiedStyles.length > 200 ? '...' : ''));
         } catch (e) {
             console.error("App.tsx: Failed to save styles to localStorage:", e);
         }
@@ -140,12 +148,11 @@ const App: React.FC = () => {
   const generateDynamicCss = useCallback((currentStyles: Record<StyleKey, Style>, layoutSettings: EditorLayoutSettings) => {
     let css = '';
     const editorWrapperId = 'prosemirror-editor-wrapper';
+    const sharedStyleClass = 'prosemirror-styled-content';
 
-    // Add layout styles
+    // Add layout styles for the content area within the page
     css += `
-      .editor-container {
-        max-width: ${layoutSettings.paperWidth} !important;
-        min-height: ${layoutSettings.paperHeight} !important;
+      #${editorWrapperId} .ProseMirror {
         padding: ${layoutSettings.marginTop} ${layoutSettings.marginRight} ${layoutSettings.marginBottom} ${layoutSettings.marginLeft} !important;
       }
     `;
@@ -164,7 +171,6 @@ const App: React.FC = () => {
         if (settings.fontStyle) styleCss += `font-style: ${settings.fontStyle} !important;\n`;
         if (settings.textTransform) styleCss += `text-transform: ${settings.textTransform} !important;\n`;
         
-        // Simplified textDecoration handling to directly use the selected value
         if (settings.textDecoration) {
             styleCss += `text-decoration: ${settings.textDecoration} !important;\n`;
         }
@@ -183,8 +189,7 @@ const App: React.FC = () => {
         if (settings.direction) styleCss += `direction: ${settings.direction} !important;\n`;
 
         if (styleCss) {
-          // Use the ID selector for higher specificity
-          css += `#${editorWrapperId} [data-style="${style.key}"] {\n${styleCss}}\n`;
+          css += `.${sharedStyleClass} [data-style="${style.key}"] {\n${styleCss}}\n`;
         }
       }
     }
@@ -242,8 +247,8 @@ const App: React.FC = () => {
 
   const [ai, setAi] = useState<GoogleGenAI | null>(null);
 
-  // New state for version control
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [pageCount, setPageCount] = useState(1);
   
   useEffect(() => {
     try {
@@ -254,7 +259,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Load versions from localStorage on initial render
   useEffect(() => {
     try {
       const savedVersions = localStorage.getItem('documentVersions');
@@ -264,11 +268,10 @@ const App: React.FC = () => {
       }
     } catch (e) {
       console.error("Failed to load document versions from localStorage:", e);
-      setVersions([]); // Start fresh if loading fails
+      setVersions([]);
     }
   }, []);
 
-  // Persist versions to localStorage whenever `versions` state changes
   useEffect(() => {
     try {
       localStorage.setItem('documentVersions', JSON.stringify(versions));
@@ -277,7 +280,6 @@ const App: React.FC = () => {
     }
   }, [versions]);
   
-  // New: Function to save the current document state as a version
   const saveCurrentVersion = useCallback((name?: string) => {
     if (!blocks || !metadata) {
       alert("Kan ikke gemme version: Intet dokumentindhold eller metadata at gemme.");
@@ -285,27 +287,25 @@ const App: React.FC = () => {
     }
 
     const newVersion: DocumentVersion = {
-      id: Date.now().toString(), // Simple unique ID
+      id: Date.now().toString(),
       timestamp: Date.now(),
       name: name && name.trim() !== '' ? name.trim() : `Auto-gemt ${new Date().toLocaleString()}`,
-      blocks: JSON.parse(JSON.stringify(blocks)), // Deep copy
-      metadata: JSON.parse(JSON.stringify(metadata)), // Deep copy
+      blocks: JSON.parse(JSON.stringify(blocks)),
+      metadata: JSON.parse(JSON.stringify(metadata)),
     };
 
     setVersions(prev => [...prev, newVersion]);
     alert(`Version "${newVersion.name}" gemt.`);
   }, [blocks, metadata]);
 
-  // New: Function to load a specific version
   const loadVersion = useCallback((versionToLoad: DocumentVersion) => {
     if (window.confirm("Er du sikker på, at du vil indlæse denne version? Alle ikke-gemte ændringer vil gå tabt.")) {
-      setBlocks(JSON.parse(JSON.stringify(versionToLoad.blocks))); // Deep copy
-      setMetadata(JSON.parse(JSON.stringify(versionToLoad.metadata))); // Deep copy
+      setBlocks(JSON.parse(JSON.stringify(versionToLoad.blocks)));
+      setMetadata(JSON.parse(JSON.stringify(versionToLoad.metadata)));
       alert(`Version "${versionToLoad.name}" indlæst.`);
     }
   }, []);
 
-  // New: Function to delete a specific version
   const deleteVersion = useCallback((versionId: string) => {
     if (window.confirm("Er du sikker på, at du vil slette denne version? Dette kan ikke fortrydes.")) {
       setVersions(prev => prev.filter(v => v.id !== versionId));
@@ -313,7 +313,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // New: Function to update a version's name
   const updateVersionName = useCallback((versionId: string, newName: string) => {
     setVersions(prev => prev.map(v => v.id === versionId ? { ...v, name: newName } : v));
   }, []);
@@ -389,7 +388,6 @@ const App: React.FC = () => {
             // @ts-ignore
             const result = await mammoth.convertToHtml({ arrayBuffer: arrayBuffer });
             const html = result.value; 
-            // Fix: Explicitly type `s` as `Style` to resolve properties.
             const styleDescriptions = Object.values(styles).map((s: Style) => `* \`${s.key}\`: ${s.name} - ${s.description}`).join('\n');
             const documentTypePrompt = documentType === 'book' 
               ? "This is a book. Use 'del' for main parts and 'kapitel' for chapters as the highest-level headings."
@@ -426,7 +424,7 @@ ${html}
   const handleApplyStyle = useCallback((styleKey: StyleKey) => editorApiRef.current?.applyStyle(styleKey), []);
 
   const handleMetadataChange = useCallback((newMetadataAction: React.SetStateAction<Metadata>) => {
-    setMetadata(newMetadataAction as any); // Let's trust the caller for now
+    setMetadata(newMetadataAction as any);
   }, []);
   
   const handleRemoveEmptyBlocks = useCallback(() => editorApiRef.current?.removeEmptyBlocks(), []);
@@ -441,9 +439,26 @@ ${html}
 
   const handleBlockNavigationClick = useCallback((blockId: number) => editorApiRef.current?.scrollToBlock(blockId), []);
   
+  const layoutInPixels = useMemo(() => ({
+    pageHeight: getPixelHeightForUnit(editorLayout.paperHeight),
+    footerArea: getPixelHeightForUnit(editorLayout.marginBottom), // Use dynamic margin
+  }), [editorLayout.paperHeight, editorLayout.marginBottom]);
+
+  const handleSelectionChange = useCallback(({activeBlockId, searchResults, canUndo, canRedo}) => {
+    setActiveBlockId(activeBlockId);
+    if (searchResults) setSearchResults(searchResults);
+    setCanUndo(canUndo);
+    setCanRedo(canRedo);
+  }, []);
+
   if (!documentType || !blocks || !metadata) {
     return <DocumentTypeSelection onSelect={handleSelectDocumentType} />;
   }
+  
+  // Refactored calculation for clarity and consistency.
+  // This ensures the container is always large enough for all pages and the gaps between them.
+  const pageHeightWithGap = layoutInPixels.pageHeight + PAGE_GAP_PX;
+  const containerMinHeight = pageCount > 0 ? (pageCount * pageHeightWithGap) - PAGE_GAP_PX : 0;
 
   return (
     <div className="flex flex-col h-screen font-sans bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
@@ -465,7 +480,7 @@ ${html}
         onMetadataChange={handleMetadataChange}
         documentType={documentType}
         onTitleFocus={() => editorApiRef.current?.focusTitle()}
-        onSaveVersion={saveCurrentVersion} // Pass new prop for saving versions
+        onSaveVersion={saveCurrentVersion}
       />
       <main className="flex-grow flex overflow-hidden">
         {isLeftSidebarOpen && (
@@ -476,28 +491,68 @@ ${html}
                   onAddBlock={handleAddBlock}
                   onApplyStyle={handleApplyStyle}
                   documentType={documentType}
-                  selectedBlockIds={new Set(activeBlockId ? [activeBlockId] : [])} // Simplified for now
-                  disabledStyles={new Set()} // TODO: Re-implement this logic
+                  selectedBlockIds={new Set(activeBlockId ? [activeBlockId] : [])}
+                  disabledStyles={new Set()}
                   onOpenStyleManager={() => setIsStyleManagerOpen(true)}
                 />
             </div>
         )}
         <div className="flex-grow min-w-0 overflow-y-auto bg-gray-200 dark:bg-slate-900 p-4 sm:p-8">
-            <div id="prosemirror-editor-wrapper" className="editor-container">
-            <EditorCanvas 
-              styles={styles}
-              documentType={documentType}
-              blocks={blocks}
-              onBlocksChange={setBlocks}
-              editorApiRef={editorApiRef}
-              onSelectionChange={({activeBlockId, searchResults, canUndo, canRedo}) => {
-                setActiveBlockId(activeBlockId);
-                if (searchResults) setSearchResults(searchResults);
-                setCanUndo(canUndo);
-                setCanRedo(canRedo);
-              }}
-              searchQuery={searchQuery}
-            />
+            <div 
+              className="pages-container"
+              style={{ minHeight: containerMinHeight }}
+            >
+              {Array.from({ length: pageCount }).map((_, i) => (
+                  <div 
+                      key={`bg-${i}`}
+                      className="page-background"
+                      style={{
+                          top: `${i * pageHeightWithGap}px`,
+                          height: `${layoutInPixels.pageHeight}px`, // Use pixels for consistency
+                          width: editorLayout.paperWidth,
+                      }}
+                  />
+              ))}
+
+              {Array.from({ length: pageCount }).map((_, i) => {
+                  const pageTop = i * pageHeightWithGap;
+                  const footerTop = pageTop + layoutInPixels.pageHeight - layoutInPixels.footerArea;
+
+                  const footerStyle: React.CSSProperties = {
+                      width: editorLayout.paperWidth,
+                      height: `${layoutInPixels.footerArea}px`,
+                      top: `${footerTop}px`,
+                      paddingLeft: editorLayout.marginLeft,
+                      paddingRight: editorLayout.marginRight,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                  };
+                  
+                  return (
+                      <div 
+                          key={`footer-${i}`}
+                          className="page-footer"
+                          style={footerStyle}
+                      >
+                          Side {i + 1} af {pageCount}
+                      </div>
+                  );
+              })}
+              
+              <div id="prosemirror-editor-wrapper" className="editor-container" style={{maxWidth: editorLayout.paperWidth}}>
+              <EditorCanvas 
+                styles={styles}
+                documentType={documentType}
+                blocks={blocks}
+                onBlocksChange={setBlocks}
+                editorApiRef={editorApiRef}
+                onSelectionChange={handleSelectionChange}
+                searchQuery={searchQuery}
+                layoutSettings={editorLayout}
+                onPaginationChange={setPageCount}
+              />
+              </div>
             </div>
         </div>
         {isRightSidebarOpen && (
@@ -549,7 +604,6 @@ ${html}
                         />
                       </Tab>
                       <Tab label="CSS">
-                        {/* Nested TabbedPanel for CSS */}
                         <TabbedPanel>
                           <Tab label="PDF CSS Editor">
                             <PdfCssPanel
@@ -567,7 +621,7 @@ ${html}
                           </Tab>
                         </TabbedPanel>
                       </Tab>
-                      <Tab label="Versioner"> {/* New Tab for Version History */}
+                      <Tab label="Versioner">
                         <VersionHistoryPanel
                           versions={versions}
                           onSave={saveCurrentVersion}

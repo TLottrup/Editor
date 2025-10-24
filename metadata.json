@@ -1,5 +1,5 @@
 {
-  "name": " Djøf Forlag Legal Editor",
+  "name": " Djøf Forlag Legal ProseMirror Editor",
   "description": "An online editor for scientific documents with BITS and JATS XML export capabilities. Create structured content using a predefined style palette and export to industry-standard formats.",
   "requestFramePermissions": []
 }

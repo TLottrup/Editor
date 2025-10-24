@@ -53,10 +53,51 @@
       .editor-container {
         margin-left: auto;
         margin-right: auto;
-        background: #fff;
-        border-radius: 1px;
+        background: transparent;
+        border-radius: 0;
+        box-shadow: none;
+        position: relative;
+        z-index: 2;
       }
       
+      /* New styles for pagination */
+      .pages-container {
+        position: relative;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .page-background {
+        position: absolute;
+        left: 0;
+        right: 0;
+        margin-left: auto;
+        margin-right: auto;
+        background: #fff;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        z-index: 1;
+        border-radius: 1px;
+        pointer-events: none;
+      }
+      .page-footer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        margin-left: auto;
+        margin-right: auto;
+        text-align: center;
+        color: #9ca3af; /* gray-400 */
+        font-size: 0.75rem; /* text-xs */
+        z-index: 4;
+        pointer-events: none; /* So it doesn't interfere with editor clicks */
+      }
+      .dark .page-background {
+        background-color: #1f2937; /* gray-800 */
+        border: 1px solid #374151; /* gray-700 */
+      }
+      .dark .page-footer {
+        color: #6b7280; /* gray-500 */
+      }
+
       /* CSS for nested lists */
       .prosemirror-editor {
         counter-reset: ol-counter-0;

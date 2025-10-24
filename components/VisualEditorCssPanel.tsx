@@ -257,7 +257,7 @@ export const VisualEditorCssPanel: React.FC<VisualEditorCssPanelProps> = ({ styl
                         ${option !== options[0] ? '-ml-px' : ''}
                         focus:z-10 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors flex justify-center items-center gap-1`}
           >
-            {option.icon} {option.label}
+            {option.icon || option.label}
           </button>
         ))}
       </div>
@@ -416,10 +416,10 @@ export const VisualEditorCssPanel: React.FC<VisualEditorCssPanelProps> = ({ styl
               <ToggleButtons
                 label="Decoration"
                 options={[
-                  { value: 'none', label: 'A' },
-                  { value: 'underline', label: 'A', icon: <span className="underline"></span> }, // Using span for visual cue
-                  { value: 'line-through', label: 'A', icon: <span className="line-through"></span> },
-                  { value: 'overline', label: 'A', icon: <span className="overline"></span> },
+                  { value: 'none', label: 'A', icon: undefined },
+                  { value: 'underline', label: '', icon: <span className="underline">A</span> },
+                  { value: 'line-through', label: '', icon: <span className="line-through">A</span> },
+                  { value: 'overline', label: '', icon: <span className="overline">A</span> },
                 ]}
                 value={style.visualSettings?.textDecoration || 'none'}
                 onChange={(val) => handleSettingsChange(style.key, { textDecoration: val as 'none' | 'underline' | 'line-through' | 'overline' })}
