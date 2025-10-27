@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import type { DocumentBlock, Style, StyleKey, DocumentType, TableData, ImageData } from '../types';
-import { PlusIcon, TableIcon, ImageIcon, OrderedListIcon, UnorderedListIcon, SettingsIcon, FootnoteIcon } from './icons';
+import { PlusIcon, TableIcon, ImageIcon, SettingsIcon, FootnoteIcon, ChevronDownIcon } from './icons';
 
 interface StylePaletteProps {
   styles: Style[];
@@ -15,56 +15,56 @@ interface StylePaletteProps {
   onOpenStyleManager: () => void;
 }
 
-const StyleButton: React.FC<{
+const StyleCard: React.FC<{
     style: Style;
     isActive: boolean;
     onApplyStyle: () => void;
     onAddBlock: () => void;
     disabled: boolean;
 }> = ({ style, isActive, onApplyStyle, onAddBlock, disabled }) => {
-    const Icon = () => {
-        const className = `h-5 w-5 transition-colors ${
-            isActive ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500 group-hover:text-blue-500'
-        }`;
+    // Cap the font size in the preview to prevent it from breaking the layout
+    const previewFontSize = style.visualSettings?.fontSize 
+        ? `${Math.min(style.visualSettings.fontSize, 22)}px` 
+        : '1rem';
 
-        switch (style.key) {
-            case 'ordered_list_item': return <OrderedListIcon className={className} />;
-            case 'unordered_list_item': return <UnorderedListIcon className={className} />;
-            default: return <PlusIcon className={className} />;
-        }
+    const previewStyle: React.CSSProperties = {
+        fontFamily: style.visualSettings?.fontFamily,
+        fontWeight: style.visualSettings?.fontWeight,
+        fontStyle: style.visualSettings?.fontStyle,
+        textTransform: style.visualSettings?.textTransform,
+        textDecoration: style.visualSettings?.textDecoration,
+        fontSize: previewFontSize,
+        lineHeight: 1.2,
     };
+    
+     if (!isActive) {
+        previewStyle.color = style.visualSettings?.color;
+    }
 
     return (
-        <div
-            className={`w-full flex justify-between items-center rounded-md transition-all duration-150 group ${
+        <button
+            onMouseDown={(e) => { e.preventDefault(); onApplyStyle(); }}
+            className={`group relative w-full text-left p-3 rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 ${
                 isActive 
                 ? 'bg-blue-100 dark:bg-blue-900/60 ring-2 ring-blue-500' 
-                : disabled ? 'opacity-50' : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                : disabled ? 'opacity-50 cursor-not-allowed' : 'bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700'
             }`}
+            aria-label={`Apply style: ${style.name}`}
+            title={disabled ? `${style.name} (Ikke tilladt her)` : style.description}
+            disabled={disabled}
         >
-            <button
-                onMouseDown={(e) => {
-                    e.preventDefault();
-                    onApplyStyle();
-                }}
-                className="flex-grow text-left py-2 px-3 focus:outline-none disabled:cursor-not-allowed"
-                aria-label={`Apply style: ${style.name}`}
-                title={disabled ? `${style.name} (Ikke tilladt her)` : style.description}
-                disabled={disabled}
+            <p style={previewStyle} className={`truncate ${isActive ? 'text-blue-800 dark:text-blue-300' : ''}`}>
+              {style.name}
+            </p>
+            <div
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onAddBlock(); }}
+                className="absolute top-2 right-2 p-1.5 rounded-full bg-white dark:bg-gray-800 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-200 dark:hover:bg-gray-600 hover:text-blue-500"
+                aria-label={`Tilføj ny blok med typografi: ${style.name}`}
+                title={`Tilføj ny ${style.name} blok`}
             >
-                <p className={`font-semibold text-sm ${
-                    isActive ? 'text-blue-800 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200'
-                }`}>{style.name}</p>
-            </button>
-            <button 
-                onClick={onAddBlock} 
-                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 focus:outline-none group"
-                aria-label={`Add new block with style: ${style.name}`}
-                title={`Add new ${style.name} block`}
-            >
-                <Icon />
-            </button>
-        </div>
+                <PlusIcon className="h-4 w-4" />
+            </div>
+        </button>
     );
 };
 
@@ -75,25 +75,58 @@ const StyleCategory: React.FC<{
     onAddBlock: (styleKey: StyleKey) => void;
     onApplyStyle: (styleKey: StyleKey) => void;
     disabledStyles: Set<StyleKey>;
-}> = ({ title, styles, activeStyleKey, onAddBlock, onApplyStyle, disabledStyles }) => {
+    isExpanded: boolean;
+    onToggle: () => void;
+}> = ({ title, styles, activeStyleKey, onAddBlock, onApplyStyle, disabledStyles, isExpanded, onToggle }) => {
     if (styles.length === 0) return null;
     
     return (
-        <div className="space-y-1">
-            <h3 className="text-xs font-bold uppercase text-gray-500 dark:text-gray-400 mt-4 mb-2 px-1">{title}</h3>
-            {styles.map(style => (
-                <StyleButton 
-                    key={style.key}
-                    style={style}
-                    isActive={style.key === activeStyleKey}
-                    onApplyStyle={() => onApplyStyle(style.key)}
-                    onAddBlock={() => onAddBlock(style.key)}
-                    disabled={disabledStyles.has(style.key)}
-                />
-            ))}
+        <div>
+            <button 
+                onClick={onToggle}
+                className="w-full flex justify-between items-center py-2 px-1 text-left"
+            >
+                <h3 className="text-sm font-bold uppercase text-gray-500 dark:text-gray-400">{title}</h3>
+                <ChevronDownIcon className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${!isExpanded ? '-rotate-90' : ''}`} />
+            </button>
+            {isExpanded && (
+                <div className="space-y-2 py-2">
+                    {styles.map(style => (
+                        <StyleCard 
+                            key={style.key}
+                            style={style}
+                            isActive={style.key === activeStyleKey}
+                            onApplyStyle={() => onApplyStyle(style.key)}
+                            onAddBlock={() => onAddBlock(style.key)}
+                            disabled={disabledStyles.has(style.key)}
+                        />
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
+
+const ObjectButton: React.FC<{
+    title: string;
+    description: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+}> = ({ title, description, icon, onClick, disabled }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className="group w-full flex items-center gap-4 text-left p-3 rounded-lg transition-colors bg-gray-50 hover:bg-gray-100 dark:bg-gray-700/50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
+        title={description}
+    >
+        <div className="p-2 bg-gray-200 dark:bg-gray-600 rounded-md text-gray-600 dark:text-gray-300 group-hover:text-blue-500 transition-colors">
+            {icon}
+        </div>
+        <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">{title}</p>
+    </button>
+);
+
 
 export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAddBlock, documentType, selectedBlockIds, onApplyStyle, onAddFootnote, isSelectionEmpty, disabledStyles, onOpenStyleManager }) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -101,33 +134,32 @@ export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAd
 
   const filteredStyles = styles.filter(s => {
     if (s.key === 'table' || s.key === 'image') return false; // Objects are handled separately
-    if (documentType === 'book') return s.key !== 'abstract' && s.key !== 'abstract_heading';
-    if (documentType === 'journal') return s.key !== 'kapitel' && s.key !== 'del';
-    return true;
+    return s.allowedDocumentTypes?.includes(documentType) ?? true; // Filter by document type
   });
   
   const styleCategories = [
-      {
-        title: 'Dokumentstruktur',
-        styles: filteredStyles.filter(s => ['del', 'kapitel'].includes(s.key)),
-      },
-      {
-        title: 'Overskrifter',
-        styles: filteredStyles.filter(s => s.key.startsWith('section_heading')),
-      },
-      {
-        title: 'Brødtekst',
-        styles: filteredStyles.filter(s => ['body', 'petit', 'caption'].includes(s.key)),
-      },
-      {
-        title: 'Resumé',
-        styles: filteredStyles.filter(s => ['abstract_heading', 'abstract'].includes(s.key)),
-      },
-      {
-        title: 'Lister',
-        styles: filteredStyles.filter(s => s.key.includes('list_item')),
-      }
+      { title: 'Forord', styles: filteredStyles.filter(s => s.key === 'front_matter_title')},
+      { title: 'Dokumentstruktur', styles: filteredStyles.filter(s => ['del', 'kapitel'].includes(s.key)) },
+      { title: 'Overskrifter', styles: filteredStyles.filter(s => s.key.startsWith('section_heading')) },
+      { title: 'Brødtekst', styles: filteredStyles.filter(s => ['body', 'petit', 'caption'].includes(s.key)) },
+      { title: 'Resumé', styles: filteredStyles.filter(s => ['abstract_heading', 'abstract'].includes(s.key)) },
+      { title: 'Lister', styles: filteredStyles.filter(s => s.key.includes('list_item')) },
+      { title: 'Efterord', styles: filteredStyles.filter(s => s.key === 'back_matter_title')},
   ];
+
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(() => new Set(styleCategories.map(c => c.title)));
+
+  const toggleCategory = (title: string) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(title)) {
+        newSet.delete(title);
+      } else {
+        newSet.add(title);
+      }
+      return newSet;
+    });
+  };
 
   const handleAddTable = () => {
     const initialTableData: TableData = {
@@ -140,9 +172,7 @@ export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAd
     onAddBlock('table', JSON.stringify(initialTableData));
   };
 
-  const handleImageUploadClick = () => {
-    imageInputRef.current?.click();
-  };
+  const handleImageUploadClick = () => { imageInputRef.current?.click(); };
 
   const handleImageFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -162,21 +192,10 @@ export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAd
   };
 
   const activeStyleKey = React.useMemo(() => {
-    if (selectedBlockIds.size === 0) return undefined;
+    if (selectedBlockIds.size !== 1) return undefined;
     const firstSelectedId = selectedBlockIds.values().next().value;
     const firstSelectedBlock = blocks.find(b => b.id === firstSelectedId);
-    if (!firstSelectedBlock) return undefined;
-
-    const firstStyle = firstSelectedBlock.style;
-    // If all selected blocks have the same style, that's the active one.
-    // Otherwise, none is active.
-    for (const id of selectedBlockIds) {
-        const block = blocks.find(b => b.id === id);
-        if (block && block.style !== firstStyle) {
-            return undefined; // Indeterminate state
-        }
-    }
-    return firstStyle;
+    return firstSelectedBlock?.style;
   }, [selectedBlockIds, blocks]);
 
   return (
@@ -226,44 +245,34 @@ export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAd
                 onAddBlock={onAddBlock}
                 onApplyStyle={onApplyStyle}
                 disabledStyles={disabledStyles}
+                isExpanded={expandedCategories.has(category.title)}
+                onToggle={() => toggleCategory(category.title)}
             />
           ))}
         </div>
       )}
 
       {activeTab === 'objects' && (
-        <div className="space-y-1 pt-2">
-          <button
+        <div className="space-y-2 pt-2">
+          <ObjectButton
             onClick={handleAddTable}
-            className="w-full text-left py-2 px-3 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-            title="Indsæt en tabel med rækker og kolonner"
-          >
-            <div className="flex justify-between items-center">
-              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Tabel</p>
-              <TableIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
-            </div>
-          </button>
-          <button
+            title="Tabel"
+            description="Indsæt en tabel med rækker og kolonner"
+            icon={<TableIcon className="h-5 w-5" />}
+          />
+          <ObjectButton
             onClick={handleImageUploadClick}
-            className="w-full text-left py-2 px-3 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
-            title="Indsæt et billede med billedtekst"
-          >
-            <div className="flex justify-between items-center">
-              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Billede</p>
-              <ImageIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
-            </div>
-          </button>
-           <button
+            title="Billede"
+            description="Indsæt et billede med billedtekst"
+            icon={<ImageIcon className="h-5 w-5" />}
+          />
+           <ObjectButton
             onClick={onAddFootnote}
             disabled={isSelectionEmpty}
-            className="w-full text-left py-2 px-3 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isSelectionEmpty ? "Vælg tekst for at tilføje en fodnote" : "Tilføj fodnote til valgt tekst"}
-          >
-            <div className="flex justify-between items-center">
-              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Tilføj Fodnote</p>
-              <FootnoteIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
-            </div>
-          </button>
+            title="Tilføj Fodnote"
+            description={isSelectionEmpty ? "Vælg tekst for at tilføje en fodnote" : "Tilføj fodnote til valgt tekst"}
+            icon={<FootnoteIcon className="h-5 w-5" />}
+          />
           <input
             type="file"
             ref={imageInputRef}

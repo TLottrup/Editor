@@ -92,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           {isLeftSidebarOpen ? <PanelLeftCloseIcon className="h-5 w-5" /> : <PanelLeftOpenIcon className="h-5 w-5" />}
         </button>
         <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap">
-          Djøf Forlag - <span style={{color: 'oklch(58.8% 0.158 241.966)'}}>Drafter</span>
+       <span style={{color: 'oklch(58.8% 0.158 241.966)'}}>DocHub</span>
         </h1>
         <div className="flex items-center gap-1">
             <button

@@ -248,7 +248,7 @@ const buildXmlFragmentTree = (blocks: DocumentBlock[], format: 'jats' | 'bits', 
             
         const element = { tag: style[tagKey], content, attributes: style.attributes, isHtml }; // Pass attributes here
 
-        const isHeading = style.level !== undefined && (style.key.includes('heading') || style.key === 'kapitel' || style.key === 'del');
+        const isHeading = style.level !== undefined && (style.key.includes('heading') || style.key === 'kapitel' || style.key === 'del' || style.key === 'front_matter_title' || style.key === 'back_matter_title');
         const level = style.level ?? 99;
 
         if (isHeading) {
@@ -468,48 +468,61 @@ export const generateBitsXml = (blocks: DocumentBlock[], metadata: Metadata, sty
       <p>${escapeXml(bookMeta.description)}</p>
     </abstract>`;
     }
-
-    // BITS: Front matter blocks (e.g., abstracts, dedication) go into <book-meta>
-    const frontMatterBlocks = blocks.filter(b => styles[b.style]?.matterType === 'front');
-    const frontMatterTree = buildXmlFragmentTree(frontMatterBlocks, 'bits', images, footnoteMap, styles);
-    const frontMatterXml = renderXml(frontMatterTree, '    ');
-
-    // BITS: Body matter blocks, specifically handling chapters
-    const bodyMatterBlocks = blocks.filter(b => 
-        styles[b.style]?.matterType === 'body' || 
-        styles[b.style]?.matterType === 'chapter' ||
-        (!styles[b.style]?.matterType && !isListItem(b.style) && !(['abstract', 'abstract_heading'].includes(b.style)))
-    );
-
-    let bodyXmlContent = '';
-    let currentChapterBlocks: DocumentBlock[] = [];
     
-    // Group blocks into chapters or direct body content
-    for (let i = 0; i < bodyMatterBlocks.length; i++) {
-        const block = bodyMatterBlocks[i];
-        const style = styles[block.style];
+    // Partition blocks into meta, front, body, and back sections
+    let currentMatter: 'meta' | 'front' | 'body' | 'back' = 'body'; // Default to body
+    
+    const metaFrontMatterBlocks: DocumentBlock[] = [];
+    const structuralFrontMatterBlocks: DocumentBlock[] = [];
+    const bodyMatterBlocks: DocumentBlock[] = [];
+    const backMatterBlocks: DocumentBlock[] = [];
 
-        if (style?.matterType === 'chapter') {
-            if (currentChapterBlocks.length > 0) {
-                // Render the previous chapter's content
-                const chapterTree = buildXmlFragmentTree(currentChapterBlocks, 'bits', images, footnoteMap, styles);
-                bodyXmlContent += renderXml(chapterTree, '    ') + '\n';
-            }
-            // Start a new chapter
-            currentChapterBlocks = [block];
-        } else {
-            // Add block to current chapter or to general body if no chapter started
-            currentChapterBlocks.push(block);
+    for (const block of blocks) {
+        const style = styles[block.style];
+        if (!style) continue;
+
+        // Abstracts always go into meta, regardless of position
+        if (style.bitsTag === 'abstract') {
+            metaFrontMatterBlocks.push(block);
+            continue; 
+        }
+        
+        // State-changing titles
+        if (style.matterType === 'front') {
+            currentMatter = 'front';
+        } else if (style.matterType === 'back') {
+            currentMatter = 'back';
+        } else if (style.matterType === 'body' && (style.key === 'del' || style.key === 'kapitel')) {
+            // A main part/chapter title resets the context to the book body
+            currentMatter = 'body';
+        }
+        
+        switch (currentMatter) {
+            case 'front':
+                structuralFrontMatterBlocks.push(block);
+                break;
+            case 'body':
+                bodyMatterBlocks.push(block);
+                break;
+            case 'back':
+                backMatterBlocks.push(block);
+                break;
         }
     }
-    // Render the last chapter/body content
-    if (currentChapterBlocks.length > 0) {
-        const chapterTree = buildXmlFragmentTree(currentChapterBlocks, 'bits', images, footnoteMap, styles);
-        bodyXmlContent += renderXml(chapterTree, '    ') + '\n';
-    }
+    
+    // BITS: <book-meta> contains abstracts, etc.
+    const metaFrontMatterTree = buildXmlFragmentTree(metaFrontMatterBlocks, 'bits', images, footnoteMap, styles);
+    const metaFrontMatterXml = renderXml(metaFrontMatterTree, '    ');
+    
+    // BITS: <book-front> contains prefaces, etc.
+    const structuralFrontMatterTree = buildXmlFragmentTree(structuralFrontMatterBlocks, 'bits', images, footnoteMap, styles);
+    const structuralFrontMatterXml = renderXml(structuralFrontMatterTree, '    ');
+
+    // BITS: Body matter blocks, specifically handling chapters
+    const bodyTree = buildXmlFragmentTree(bodyMatterBlocks, 'bits', images, footnoteMap, styles);
+    const bodyXmlContent = renderXml(bodyTree, '    ');
 
     // BITS: Back matter blocks
-    const backMatterBlocks = blocks.filter(b => styles[b.style]?.matterType === 'back');
     const backMatterTree = buildXmlFragmentTree(backMatterBlocks, 'bits', images, footnoteMap, styles);
     const backMatterXml = renderXml(backMatterTree, '    ');
     
@@ -527,8 +540,9 @@ ${authorsXml}
     </contrib-group>
 ${extraMetaXml.join('\n')}
 ${descriptionXml ? `\n${descriptionXml}`: ''}
-${frontMatterXml ? `\n${frontMatterXml}` : ''}
+${metaFrontMatterXml ? `\n${metaFrontMatterXml}` : ''}
   </book-meta>
+${structuralFrontMatterXml ? `  <book-front>\n${structuralFrontMatterXml}\n  </book-front>` : ''}
   <book-body>
 ${bodyXmlContent}
   </book-body>

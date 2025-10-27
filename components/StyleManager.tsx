@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { Style, StyleKey, ListAttributes } from '../types';
+import type { Style, StyleKey, ListAttributes, DocumentType } from '../types';
 import { PlusIcon, TrashIcon } from './icons';
 import { emptyStyle as initialEmptyStyle } from '../constants';
 
@@ -69,6 +69,17 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ styles, setStyles, o
             ...prev, 
             [name]: newValue
         };
+    });
+  };
+  
+  const handleAllowedDocTypeChange = (docType: DocumentType, isChecked: boolean) => {
+    setFormData(prev => {
+        const currentTypes = prev.allowedDocumentTypes || [];
+        if (isChecked) {
+            return { ...prev, allowedDocumentTypes: [...currentTypes, docType] };
+        } else {
+            return { ...prev, allowedDocumentTypes: currentTypes.filter(t => t !== docType) };
+        }
     });
   };
 
@@ -168,7 +179,6 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ styles, setStyles, o
     }
   };
 
-  const isHeadingStyle = formData.level !== undefined;
   const isListItem = formData.key.includes('_list_item');
 
   return (
@@ -257,6 +267,36 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ styles, setStyles, o
                         <option value="back">Back Matter</option>
                         <option value="chapter">Chapter (BITS)</option>
                     </select>
+                </div>
+            </div>
+            
+            <div className="p-3 border dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                <h4 className="text-md font-semibold mb-2">Dokumenttype synlighed</h4>
+                 <div className="flex gap-4">
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="docTypeJournal"
+                            checked={formData.allowedDocumentTypes?.includes('journal') ?? false}
+                            onChange={(e) => handleAllowedDocTypeChange('journal', e.target.checked)}
+                             className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                         <label htmlFor="docTypeJournal" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                           Tidsskriftartikel
+                        </label>
+                    </div>
+                     <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="docTypeBook"
+                            checked={formData.allowedDocumentTypes?.includes('book') ?? false}
+                            onChange={(e) => handleAllowedDocTypeChange('book', e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                         <label htmlFor="docTypeBook" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                           Bog
+                        </label>
+                    </div>
                 </div>
             </div>
 

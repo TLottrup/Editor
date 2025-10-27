@@ -1,20 +1,28 @@
 import React, { useState } from 'react';
+import type { DocumentType } from '../types';
 
 interface LoremIpsumDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (count: number) => void;
+  onConfirm: (options: { paragraphs: number; parts: number; chapters: number }) => void;
+  documentType: DocumentType;
 }
 
-export const LoremIpsumDialog: React.FC<LoremIpsumDialogProps> = ({ isOpen, onClose, onConfirm }) => {
-  const [paragraphCount, setParagraphCount] = useState(10);
+export const LoremIpsumDialog: React.FC<LoremIpsumDialogProps> = ({ isOpen, onClose, onConfirm, documentType }) => {
+  const [paragraphCount, setParagraphCount] = useState(20);
+  const [partCount, setPartCount] = useState(2);
+  const [chapterCount, setChapterCount] = useState(5);
 
   if (!isOpen) {
     return null;
   }
 
   const handleConfirm = () => {
-    onConfirm(paragraphCount);
+    onConfirm({
+      paragraphs: paragraphCount,
+      parts: documentType === 'book' ? partCount : 0,
+      chapters: documentType === 'book' ? chapterCount : 0,
+    });
   };
 
   return (
@@ -39,6 +47,36 @@ export const LoremIpsumDialog: React.FC<LoremIpsumDialogProps> = ({ isOpen, onCl
               autoFocus
             />
           </div>
+          {documentType === 'book' && (
+            <>
+              <div>
+                <label htmlFor="partCount" className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Antal dele
+                </label>
+                <input
+                  type="number"
+                  id="partCount"
+                  value={partCount}
+                  onChange={(e) => setPartCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  min="1"
+                  className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="chapterCount" className="block text-sm font-medium text-gray-600 dark:text-gray-400">
+                  Antal kapitler
+                </label>
+                <input
+                  type="number"
+                  id="chapterCount"
+                  value={chapterCount}
+                  onChange={(e) => setChapterCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  min="1"
+                  className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm"
+                />
+              </div>
+            </>
+          )}
         </main>
         <footer className="flex items-center justify-end p-4 border-t dark:border-gray-700 gap-3">
           <button

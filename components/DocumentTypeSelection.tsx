@@ -26,7 +26,9 @@ export const DocumentTypeSelection: React.FC<DocumentTypeSelectionProps> = ({ on
   return (
     <div className="h-screen w-screen bg-gray-100 dark:bg-gray-900 flex flex-col items-center justify-center font-sans">
       <div className="text-center mb-12">
-        <h1 className="text-5xl font-extrabold text-gray-800 dark:text-gray-200 mb-2">Opret et nyt dokument</h1>
+        <h1 className="text-5xl font-extrabold text-gray-800 dark:text-gray-200 mb-4">
+          Velkommen til <span style={{color: 'oklch(58.8% 0.158 241.966)'}}>DocHub</span>
+        </h1>
         <p className="text-lg text-gray-600 dark:text-gray-400">Vælg en dokumenttype for at starte med en skræddersyet skabelon.</p>
       </div>
       <div className="flex flex-col md:flex-row gap-10">

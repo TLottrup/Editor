@@ -1,14 +1,14 @@
 import React from 'react';
 import { TabbedPanel, Tab } from './TabbedPanel';
 import { PdfCssPanel } from './PdfCssPanel';
-import { VisualEditorCssPanel } from './VisualStyleEditor';
+import { VisualEditorCssPanel } from './VisualEditorCssPanel';
 import type { Style, StyleKey, VisualEditorSettings, EditorLayoutSettings } from '../types';
 
 interface CssPanelProps {
   pdfCss: string;
   onPdfCssChange: (css: string) => void;
   styles: Record<StyleKey, Style>;
-  onStyleChange: (newStyles: Record<StyleKey, Style>) => void;
+  onStyleChange: (update: React.SetStateAction<Record<StyleKey, Style>>) => void;
   layoutSettings: EditorLayoutSettings;
   onLayoutSettingsChange: (newSettings: EditorLayoutSettings) => void;
 }

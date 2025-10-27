@@ -1,9 +1,10 @@
-// Fix: Provide full content for types.ts to resolve module import errors across the application.
+import React from 'react';
+
+// Provide full content for types.ts to resolve module import errors across the application.
 export type DocumentType = 'journal' | 'book';
 
 export type StyleKey = string;
 
-// Fix: Added TabProps interface
 export interface TabProps {
   label: string;
   children: React.ReactNode;
@@ -55,7 +56,8 @@ export interface Style {
   attributes?: Record<string, string>;
   matterType?: 'front' | 'body' | 'back' | 'chapter'; // For JATS/BITS front/body/back matter. 'chapter' specific to BITS.
   defaultListAttributes?: ListAttributes;
-  visualSettings?: VisualEditorSettings; // New property for visual editor styles
+  visualSettings?: VisualEditorSettings;
+  allowedDocumentTypes?: DocumentType[];
 }
 
 export interface TableCell {

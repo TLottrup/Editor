@@ -503,8 +503,8 @@ ${html}
     }, 50);
   }, []);
   
-  const handleConfirmLoremIpsum = useCallback((count: number) => {
-    editorApiRef.current?.insertLoremIpsum(count);
+  const handleConfirmLoremIpsum = useCallback((options: { paragraphs: number; parts: number; chapters: number }) => {
+    editorApiRef.current?.insertLoremIpsum(options);
     setIsLoremIpsumDialogOpen(false);
   }, []);
 
@@ -532,6 +532,7 @@ ${html}
         isOpen={isLoremIpsumDialogOpen}
         onClose={() => setIsLoremIpsumDialogOpen(false)}
         onConfirm={handleConfirmLoremIpsum}
+        documentType={documentType}
       />
       {isPaginating && <LoadingOverlay />}
       <Header 

@@ -1,6 +1,46 @@
 import type { Style, StyleKey } from './types';
 
 export const STYLES: Record<StyleKey, Style> = {
+  front_matter_title: {
+    key: 'front_matter_title',
+    name: 'Front matter titel',
+    description: 'En titel til en sektion i forordet, f.eks. "Forord".',
+    className: 'text-2xl font-bold text-gray-800 dark:text-gray-200 mt-6 mb-3',
+    jatsTag: 'title',
+    nestingParentJats: 'sec', // No direct <book-front> in JATS, maps to a sec in <front>
+    bitsTag: 'title',
+    nestingParentBits: 'book-part', // A book-part inside book-front
+    level: 0,
+    attributes: { 'book-part-type': 'preface' },
+    matterType: 'front',
+    allowedDocumentTypes: ['book'],
+    visualSettings: {
+      fontFamily: 'Nunito, sans-serif',
+      color: '#1a202c',
+      fontWeight: '700',
+      fontSize: 24,
+    },
+  },
+  back_matter_title: {
+    key: 'back_matter_title',
+    name: 'Back matter titel',
+    description: 'En titel til en sektion i efterordet, f.eks. "Appendiks".',
+    className: 'text-2xl font-bold text-gray-800 dark:text-gray-200 mt-6 mb-3',
+    jatsTag: 'title',
+    nestingParentJats: 'sec',
+    bitsTag: 'title',
+    nestingParentBits: 'book-part',
+    level: 0,
+    attributes: { 'book-part-type': 'appendix' },
+    matterType: 'back',
+    allowedDocumentTypes: ['book'],
+     visualSettings: {
+      fontFamily: 'Nunito, sans-serif',
+      color: '#1a202c',
+      fontWeight: '700',
+      fontSize: 24,
+    },
+  },
   del: {
     key: 'del',
     name: 'Deltitel',
@@ -12,23 +52,14 @@ export const STYLES: Record<StyleKey, Style> = {
     nestingParentBits: 'book-part',
     level: 0,
     attributes: {},
-    matterType: 'body', // For JATS, would map to sec in body. For BITS, this is like a high-level division within body.
+    matterType: 'body',
+    allowedDocumentTypes: ['book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
       color: '#1a202c', // Dark gray
       fontWeight: '900', // Black
       fontSize: 36, // 4xl
       lineHeight: 1.2,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   kapitel: {
@@ -36,29 +67,20 @@ export const STYLES: Record<StyleKey, Style> = {
     name: 'Kapiteltitel',
     description: 'En overskrift til et hovedkapitel i en bog.',
     className: 'text-xl-relative font-bold text-gray-900 dark:text-gray-100 mt-8 mb-4',
-    jatsTag: 'title', // JATS does not have a chapter concept, maps to a top-level sec
+    jatsTag: 'title',
     nestingParentJats: 'sec',
-    bitsTag: 'title', // The parent tag will be <chapter>
+    bitsTag: 'title',
     nestingParentBits: 'chapter',
-    level: 1, // Top-level for hierarchy
+    level: 1,
     attributes: {},
-    matterType: 'chapter', // Special type for BITS chapters
+    matterType: 'chapter',
+    allowedDocumentTypes: ['book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
       color: '#1a202c', // Dark gray
       fontWeight: '700', // Bold
       fontSize: 28,
       lineHeight: 1.3,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   abstract_heading: {
@@ -71,23 +93,14 @@ export const STYLES: Record<StyleKey, Style> = {
     bitsTag: 'title',
     nestingParentBits: 'abstract',
     attributes: {},
-    matterType: 'front', // Part of front matter (abstract)
+    matterType: 'front',
+    allowedDocumentTypes: ['journal'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
       color: '#2d3748', // Gray-800
       fontWeight: '600', // Semibold
       fontSize: 20,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   abstract: {
@@ -100,7 +113,8 @@ export const STYLES: Record<StyleKey, Style> = {
     bitsTag: 'p',
     nestingParentBits: 'abstract',
     attributes: {},
-    matterType: 'front', // Part of front matter (abstract)
+    matterType: 'front',
+    allowedDocumentTypes: ['journal'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
       color: '#4a5568', // Gray-600
@@ -108,15 +122,6 @@ export const STYLES: Record<StyleKey, Style> = {
       fontSize: 18,
       lineHeight: 1.5,
       fontStyle: 'italic',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   section_heading_1: {
@@ -130,23 +135,14 @@ export const STYLES: Record<StyleKey, Style> = {
     nestingParentBits: 'sec',
     level: 2,
     attributes: {},
-    matterType: 'body', // Standard body matter heading
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#2d3748', // Gray-800
-      fontWeight: '600', // Semibold
+      color: '#2d3748',
+      fontWeight: '600',
       fontSize: 24,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   section_heading_2: {
@@ -161,22 +157,13 @@ export const STYLES: Record<StyleKey, Style> = {
     level: 3,
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#2d3748', // Gray-800
-      fontWeight: '600', // Semibold
+      color: '#2d3748',
+      fontWeight: '600',
       fontSize: 20,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   section_heading_3: {
@@ -191,22 +178,13 @@ export const STYLES: Record<StyleKey, Style> = {
     level: 4,
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#2d3748', // Gray-800
-      fontWeight: '600', // Semibold
+      color: '#2d3748',
+      fontWeight: '600',
       fontSize: 18,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   section_heading_4: {
@@ -221,22 +199,13 @@ export const STYLES: Record<StyleKey, Style> = {
     level: 5,
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#2d3748', // Gray-800
-      fontWeight: '600', // Semibold
+      color: '#2d3748',
+      fontWeight: '600',
       fontSize: 16,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   section_heading_5: {
@@ -251,22 +220,13 @@ export const STYLES: Record<StyleKey, Style> = {
     level: 6,
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#2d3748', // Gray-800
-      fontWeight: '500', // Medium
+      color: '#2d3748',
+      fontWeight: '500',
       fontSize: 16,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   body: {
@@ -277,23 +237,14 @@ export const STYLES: Record<StyleKey, Style> = {
     jatsTag: 'p',
     bitsTag: 'p',
     attributes: {},
-    matterType: 'body', // Default to body matter
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#374151', // Gray-700
-      fontWeight: '400', // Normal
+      color: '#374151',
+      fontWeight: '400',
       fontSize: 16,
       lineHeight: 1.6,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   petit: {
@@ -304,23 +255,14 @@ export const STYLES: Record<StyleKey, Style> = {
     jatsTag: 'p',
     bitsTag: 'p',
     attributes: { 'content-type': 'brevier' },
-    matterType: 'body', // Default to body matter
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#4b5563', // Gray-600
-      fontWeight: '400', // Normal
+      color: '#4b5563',
+      fontWeight: '400',
       fontSize: 14,
       lineHeight: 1.6,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   
@@ -334,77 +276,47 @@ export const STYLES: Record<StyleKey, Style> = {
     bitsTag: 'p',
     nestingParentBits: 'caption',
     attributes: {},
-    matterType: 'body', // Captions typically appear within body matter figures/tables
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#6b7280', // Gray-500
-      fontWeight: '400', // Normal
+      color: '#6b7280',
+      fontWeight: '400',
       fontSize: 14,
       lineHeight: 1.4,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
       textAlign: 'center',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   table: {
     key: 'table',
     name: 'Tabel',
     description: 'Indsæt en struktureret tabel med rækker og kolonner.',
-    className: '', // Tables have their own complex styling
+    className: '',
     jatsTag: 'table-wrap',
     bitsTag: 'table-wrap',
     attributes: {},
-    matterType: 'body', // Tables typically appear within body matter
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#374151', // Gray-700
-      fontWeight: '400',
+      color: '#374151',
       fontSize: 16,
-      lineHeight: 1.5,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   image: {
     key: 'image',
     name: 'Billede',
     description: 'Indsæt et billede med billedtekst og kilde.',
-    className: '', // Images have their own complex styling
+    className: '',
     jatsTag: 'fig',
     bitsTag: 'fig',
     attributes: {},
-    matterType: 'body', // Images typically appear within body matter
+    matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#374151', // Gray-700
-      fontWeight: '400',
+      color: '#374151',
       fontSize: 16,
-      lineHeight: 1.5,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'center',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   ordered_list_item: {
@@ -416,23 +328,13 @@ export const STYLES: Record<StyleKey, Style> = {
     bitsTag: 'list-item',
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     defaultListAttributes: { style: 'decimal' },
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#374151', // Gray-700
-      fontWeight: '400',
+      color: '#374151',
       fontSize: 16,
       lineHeight: 1.5,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
   unordered_list_item: {
@@ -444,23 +346,13 @@ export const STYLES: Record<StyleKey, Style> = {
     bitsTag: 'list-item',
     attributes: {},
     matterType: 'body',
+    allowedDocumentTypes: ['journal', 'book'],
     defaultListAttributes: { style: 'disc' },
     visualSettings: {
       fontFamily: 'Nunito, sans-serif',
-      color: '#374151', // Gray-700
-      fontWeight: '400',
+      color: '#374151',
       fontSize: 16,
       lineHeight: 1.5,
-      fontStyle: 'normal',
-      textTransform: 'none',
-      textDecoration: 'none',
-      textAlign: 'left',
-      textShadow: 'none',
-      wordBreak: 'normal',
-      letterSpacing: 0,
-      wordSpacing: 0,
-      columnCount: 1,
-      direction: 'ltr',
     },
   },
 };
@@ -475,8 +367,9 @@ export const emptyStyle: Omit<Style, 'key'> = {
   nestingParentBits: '',
   level: undefined, 
   attributes: {},
-  matterType: 'body', // Default for new styles
-  visualSettings: { // Default visual settings for new styles
+  matterType: 'body',
+  allowedDocumentTypes: ['journal', 'book'],
+  visualSettings: {
     fontFamily: 'Nunito, sans-serif',
     color: '#374151',
     fontWeight: '400',

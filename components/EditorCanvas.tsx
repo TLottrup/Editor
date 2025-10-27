@@ -1,10 +1,9 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import type { DocumentBlock, DocumentType, StyleKey, TableData, ImageData, Style, TableCell, EditorLayoutSettings } from '../types';
+import type { DocumentBlock, DocumentType, StyleKey, TableData, ImageData, Style, TableCell, EditorLayoutSettings, ListAttributes } from '../types';
 
-import { EditorState, NodeSelection, Plugin, Transaction, Command, PluginKey } from 'prosemirror-state';
+import { EditorState, NodeSelection, Plugin, Transaction, Command, PluginKey, TextSelection } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
-// FIX: Alias Prosemirror's Node to ProsemirrorNode to avoid conflict with DOM's Node. Import Mark.
 import { Schema, DOMParser, Node as ProsemirrorNode, DOMSerializer, NodeSpec, Fragment, MarkType, Mark } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
 import { keymap } from 'prosemirror-keymap';
@@ -15,16 +14,13 @@ import { gapCursor } from 'prosemirror-gapcursor';
 import { TrashIcon, RowInsertAboveIcon, RowInsertBelowIcon, ColumnInsertLeftIcon, ColumnInsertRightIcon, MergeCellsIcon, SplitCellIcon } from './icons';
 
 // Helper function to strip page_break nodes for state comparison
-// FIX: Use ProsemirrorNode alias
 const stripPageBreaks = (doc: ProsemirrorNode, schema: Schema): ProsemirrorNode => {
-    // FIX: Use ProsemirrorNode alias
     const content: ProsemirrorNode[] = [];
     doc.forEach(node => {
         if (node.type.name !== 'page_break') {
             content.push(node);
         }
     });
-    // FIX: Use ProsemirrorNode alias
     return schema.node('doc', null, Fragment.from(content));
 };
 
@@ -140,10 +136,8 @@ class ReactNodeView {
     root: Root;
     view: EditorView;
     getPos: () => number;
-    // FIX: Use ProsemirrorNode alias
     node: ProsemirrorNode;
     
-    // FIX: Use ProsemirrorNode alias
     constructor(node: ProsemirrorNode, view: EditorView, getPos: () => number, component: React.FC<any>, props: any) {
         this.node = node;
         this.view = view;
@@ -156,7 +150,6 @@ class ReactNodeView {
         this.root.render(React.createElement(component, props));
     }
 
-    // FIX: Use ProsemirrorNode alias
     update(node: ProsemirrorNode) {
         if (node.type !== this.node.type) return false;
         this.node = node;
@@ -180,7 +173,7 @@ export interface EditorApi {
     redo: () => void;
     runPagination: (startPage: number) => void;
     removePagination: () => void;
-    insertLoremIpsum: (count: number) => void;
+    insertLoremIpsum: (options: { paragraphs: number; parts: number; chapters: number }) => void;
     addFootnote: () => void;
 }
 
@@ -355,7 +348,8 @@ const generateSentence = (wordCount: number) => {
     for (let i = 0; i < wordCount; i++) {
         sentence += LOREM_IPSUM_WORDS[Math.floor(Math.random() * LOREM_IPSUM_WORDS.length)] + " ";
     }
-    return sentence.trim() + ".";
+    const trimmedSentence = sentence.trim() + ".";
+    return trimmedSentence.charAt(0).toUpperCase() + trimmedSentence.slice(1);
 };
 
 const generateParagraph = (sentenceCount: number) => {
@@ -366,72 +360,68 @@ const generateParagraph = (sentenceCount: number) => {
     return paragraph.trim();
 };
 
-const generateLoremIpsumBlocks = (paragraphCount: number, availableStyles: Record<StyleKey, Style>, documentType: DocumentType): DocumentBlock[] => {
+const generateLoremIpsumBlocks = (options: { paragraphs: number; parts: number; chapters: number }, documentType: DocumentType): DocumentBlock[] => {
+    const { paragraphs: paragraphCount, parts: partCount, chapters: chapterCount } = options;
     const blocks: DocumentBlock[] = [];
-    let paragraphsGenerated = 0;
 
-    const textStyles = Object.values(availableStyles).filter(s => s.key !== 'table' && s.key !== 'image');
-    const headingStyles = textStyles.filter(s => s.level !== undefined && s.level >= 0).sort((a, b) => (a.level || 0) - (b.level || 0));
-    const bodyStyles = textStyles.filter(s => ['body', 'petit'].includes(s.key));
-    const listStyles = textStyles.filter(s => s.key.includes('_list_item'));
-    
-    let currentHeadingLevel = -1;
+    if (documentType === 'book' && partCount > 0 && chapterCount > 0) {
+        let globalChapterCounter = 1;
+        let paragraphsPerChapter = Math.max(1, Math.floor(paragraphCount / chapterCount));
+        let remainingParagraphs = paragraphCount % chapterCount;
 
-    if (documentType === 'book') {
-        blocks.push({
-            id: Date.now() + blocks.length,
-            style: 'del',
-            content: generateSentence(3),
-            level: 0,
-        });
-        currentHeadingLevel = 0;
-    }
-
-    while (paragraphsGenerated < paragraphCount) {
-        // Add a heading
-        const nextHeadingLevel = Math.floor(Math.random() * 2) + currentHeadingLevel + 1;
-        const potentialHeadings = headingStyles.filter(s => (s.level || 0) >= nextHeadingLevel);
-        const headingStyle = potentialHeadings.length > 0 ? potentialHeadings[0] : headingStyles[headingStyles.length - 1];
-        
-        if (headingStyle) {
+        for (let i = 1; i <= partCount; i++) {
             blocks.push({
                 id: Date.now() + blocks.length,
-                style: headingStyle.key,
-                content: generateSentence(Math.floor(Math.random() * 4) + 3),
-                level: 0
+                style: 'del',
+                content: `Del ${i}: ${generateSentence(3)}`,
+                level: 0,
             });
-            currentHeadingLevel = headingStyle.level || 0;
-        }
 
-        // Add some paragraphs
-        const numParagraphs = Math.floor(Math.random() * 3) + 1;
-        for (let i = 0; i < numParagraphs && paragraphsGenerated < paragraphCount; i++) {
-            const bodyStyle = bodyStyles[Math.floor(Math.random() * bodyStyles.length)] || { key: 'body' };
-            blocks.push({
-                id: Date.now() + blocks.length,
-                style: bodyStyle.key,
-                content: generateParagraph(Math.floor(Math.random() * 4) + 3),
-                level: 0
-            });
-            paragraphsGenerated++;
-        }
+            const chaptersInThisPart = Math.floor(chapterCount / partCount) + (i <= (chapterCount % partCount) ? 1 : 0);
 
-        // Maybe add a list
-        if (Math.random() > 0.5 && listStyles.length > 0 && paragraphsGenerated < paragraphCount) {
-            const listStyle = listStyles[Math.floor(Math.random() * listStyles.length)];
-            const numListItems = Math.floor(Math.random() * 4) + 3;
-            for (let i = 0; i < numListItems; i++) {
+            for (let j = 0; j < chaptersInThisPart; j++) {
+                if (globalChapterCounter > chapterCount) break;
                 blocks.push({
                     id: Date.now() + blocks.length,
-                    style: listStyle.key,
-                    content: generateSentence(Math.floor(Math.random() * 8) + 4),
-                    level: 0
+                    style: 'kapitel',
+                    content: `Kapitel ${globalChapterCounter++}: ${generateSentence(4)}`,
+                    level: 0,
+                });
+                
+                let pCount = paragraphsPerChapter + (remainingParagraphs > 0 ? 1 : 0);
+                if(remainingParagraphs > 0) remainingParagraphs--;
+
+                for (let k = 0; k < pCount; k++) {
+                    blocks.push({
+                        id: Date.now() + blocks.length,
+                        style: 'body',
+                        content: generateParagraph(Math.floor(Math.random() * 4) + 3),
+                        level: 0,
+                    });
+                }
+            }
+        }
+    } else {
+        // Fallback for journal or simple paragraph generation
+        let headingCounter = 1;
+        for (let i = 0; i < paragraphCount; i++) {
+            // Always add a heading for the first paragraph, and for subsequent ones with a 25% chance.
+            if (i === 0 || Math.random() < 0.25) {
+                 blocks.push({
+                    id: Date.now() + blocks.length,
+                    style: 'section_heading_1',
+                    content: `${headingCounter++}. ${generateSentence(4)}`,
+                    level: 0,
                 });
             }
-            paragraphsGenerated++; // Count a list as one paragraph for simplicity
+            blocks.push({
+                id: Date.now() + blocks.length,
+                style: 'body',
+                content: generateParagraph(Math.floor(Math.random() * 4) + 3),
+                level: 0,
+            });
         }
     }
-
     return blocks;
 };
 // --- End Lorem Ipsum Generation ---
@@ -525,6 +515,194 @@ const createFootnotePlugin = (schema: Schema) => {
 
 // --- End Footnote Plugin ---
 
+// --- Search Plugin ---
+const searchPluginKey = new PluginKey('search');
+
+interface SearchState {
+  query: string;
+  results: { from: number; to: number }[];
+  currentIndex: number;
+}
+
+const createSearchPlugin = () => {
+  return new Plugin<SearchState>({
+    key: searchPluginKey,
+    state: {
+      init(): SearchState {
+        return { query: '', results: [], currentIndex: -1 };
+      },
+      apply(tr, value): SearchState {
+        const action = tr.getMeta(searchPluginKey);
+        if (action) {
+          if (action.type === 'SEARCH') {
+            return { ...value, query: action.query, results: action.results, currentIndex: action.currentIndex };
+          }
+          if (action.type === 'NAVIGATE') {
+            return { ...value, currentIndex: action.currentIndex };
+          }
+          if (action.type === 'CLEAR') {
+            return { query: '', results: [], currentIndex: -1 };
+          }
+        }
+        
+        // If the document changed and there's an active query, re-run the search
+        if (tr.docChanged && value.query) {
+            const query = value.query;
+            const results: { from: number; to: number }[] = [];
+            const queryLower = query.toLowerCase();
+
+            tr.doc.descendants((node, pos) => {
+                if (node.isText && node.text) {
+                    const textLower = node.text.toLowerCase();
+                    let index = textLower.indexOf(queryLower);
+                    while (index !== -1) {
+                        results.push({
+                            from: pos + index,
+                            to: pos + index + query.length,
+                        });
+                        index = textLower.indexOf(queryLower, index + 1);
+                    }
+                }
+            });
+
+            const newCurrentIndex = value.currentIndex >= results.length ? (results.length > 0 ? results.length - 1 : -1) : value.currentIndex;
+            
+            return {
+                query,
+                results,
+                currentIndex: newCurrentIndex
+            };
+        }
+        
+        if (tr.docChanged) {
+            return { query: '', results: [], currentIndex: -1 };
+        }
+
+        return value;
+      },
+    },
+    props: {
+      decorations(state) {
+        const searchState = this.getState(state);
+        if (!searchState || searchState.results.length === 0) return DecorationSet.empty;
+
+        const decorations = searchState.results.map((result, index) => {
+          const className = index === searchState.currentIndex ? 'current-search-result' : 'search-result';
+          return Decoration.inline(result.from, result.to, { class: className });
+        });
+
+        return DecorationSet.create(state.doc, decorations);
+      },
+    },
+  });
+};
+// --- End Search Plugin ---
+
+// --- List Numbering Plugin ---
+const createListNumberingPlugin = (styles: Record<StyleKey, Style>) => {
+    // Helper to convert a number to a specific list style format
+    const formatNumber = (num: number, style: ListAttributes['style']): string => {
+        const toRoman = (n: number): string => {
+            if (isNaN(n) || n < 1) return '';
+            const roman = { M: 1000, CM: 900, D: 500, CD: 400, C: 100, XC: 90, L: 50, XL: 40, X: 10, IX: 9, V: 5, IV: 4, I: 1 };
+            let str = '';
+            for (const i of Object.keys(roman)) {
+                const q = Math.floor(n / roman[i as keyof typeof roman]);
+                n -= q * roman[i as keyof typeof roman];
+                str += i.repeat(q);
+            }
+            return str;
+        };
+        const toAlpha = (n: number) => n > 0 && n < 27 ? String.fromCharCode(96 + n) : '';
+
+        switch (style) {
+            case 'lower-alpha': return toAlpha(num);
+            case 'upper-alpha': return toAlpha(num).toUpperCase();
+            case 'lower-roman': return toRoman(num).toLowerCase();
+            case 'upper-roman': return toRoman(num);
+            case 'decimal':
+            default: return String(num);
+        }
+    };
+    
+    return new Plugin({
+        key: new PluginKey('listNumbering'),
+        props: {
+            decorations(state) {
+                const decorations: Decoration[] = [];
+                const doc = state.doc;
+                const counters: Map<number, { isReversed: boolean, current: number, style: ListAttributes['style'] }> = new Map();
+                const reversedListCounts: Map<number, number> = new Map();
+
+                // First pass: find contiguous reversed lists and count their items.
+                doc.forEach((node, pos, i) => {
+                    const styleDef = styles[node.type.name];
+                    const listAttrs = (node.attrs.list || styleDef?.defaultListAttributes) as ListAttributes | null;
+                    const level = node.attrs.level || 0;
+
+                    if (node.type.name === 'ordered_list_item' && listAttrs?.reversed && !reversedListCounts.has(pos)) {
+                        let count = 0;
+                        let j = i;
+                        while (j < doc.childCount) {
+                            const scanNode = doc.child(j);
+                            if (scanNode.type.name === 'ordered_list_item' && (scanNode.attrs.level || 0) === level) {
+                                count++;
+                            } else {
+                                break;
+                            }
+                            j++;
+                        }
+                        reversedListCounts.set(pos, count);
+                    }
+                });
+
+                // Second pass: apply decorations
+                doc.forEach((node, pos, i) => {
+                    if (!node.type.name.includes('_list_item')) {
+                        counters.clear();
+                        return;
+                    }
+
+                    if (node.type.name === 'ordered_list_item') {
+                        const styleDef = styles[node.type.name];
+                        const listAttrs = (node.attrs.list || styleDef?.defaultListAttributes) as ListAttributes | null;
+
+                        if (!listAttrs || (!listAttrs.reversed && (!listAttrs.start || listAttrs.start === 1))) {
+                            return; // CSS can handle this
+                        }
+
+                        const level = node.attrs.level || 0;
+                        const prevNode = i > 0 ? doc.child(i - 1) : null;
+                        const isNewList = !prevNode || !prevNode.type.name.includes('_list_item') || (prevNode.attrs.level || 0) < level;
+
+                        if (isNewList) {
+                            for (const k of counters.keys()) {
+                                if (k > level) counters.delete(k);
+                            }
+                            if (listAttrs.reversed) {
+                                const count = reversedListCounts.get(pos) || 0;
+                                const start = listAttrs.start ?? count;
+                                counters.set(level, { isReversed: true, current: start, style: listAttrs.style || 'decimal' });
+                            } else {
+                                counters.set(level, { isReversed: false, current: (listAttrs.start || 1) - 1, style: listAttrs.style || 'decimal' });
+                            }
+                        }
+
+                        const counter = counters.get(level);
+                        if (counter) {
+                            const displayValue = counter.isReversed ? counter.current-- : ++counter.current;
+                            const marker = `${formatNumber(displayValue, counter.style)}.`;
+                            decorations.push(Decoration.node(pos, pos + node.nodeSize, { 'data-display-number': marker }));
+                        }
+                    }
+                });
+                return DecorationSet.create(doc, decorations);
+            }
+        }
+    });
+};
+// --- End List Numbering Plugin ---
+
 export const EditorCanvas: React.FC<{
   blocks: DocumentBlock[];
   documentType: DocumentType;
@@ -548,7 +726,6 @@ export const EditorCanvas: React.FC<{
                 group: "block",
                 atom: true,
                 attrs: { pageNumber: { default: 1 } },
-                // FIX: Use ProsemirrorNode alias
                 toDOM: (node: ProsemirrorNode) => {
                     const pageNum = node.attrs.pageNumber;
                     return ["div", { class: "page-break-container" },
@@ -575,7 +752,6 @@ export const EditorCanvas: React.FC<{
                 nodes[style.key] = {
                     attrs: { id: { default: 0 }, data: { default: '' } },
                     group: "block", atom: true,
-                    // FIX: Use ProsemirrorNode alias
                     toDOM: (node: ProsemirrorNode) => ["div", { "data-style": style.key, "data-id": node.attrs.id }],
                     parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, data: '' }) }]
                 };
@@ -583,9 +759,32 @@ export const EditorCanvas: React.FC<{
                 nodes[style.key] = {
                     attrs: { id: { default: 0 }, level: { default: 0 }, list: { default: null } },
                     content: "inline*", group: "block",
-                    // FIX: Use ProsemirrorNode alias
-                    toDOM: (node: ProsemirrorNode) => ["div", { "class": styles[node.type.name as StyleKey]?.className || '', "data-style": style.key, "data-id": node.attrs.id, "data-level": node.attrs.level }, 0],
-                    parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, level: dom.dataset.level ? parseInt(dom.dataset.level, 10) : 0 }) }]
+                    toDOM: (node: ProsemirrorNode) => {
+                        const domAttrs: Record<string, any> = {
+                            "class": styles[node.type.name as StyleKey]?.className || '',
+                            "data-style": style.key,
+                            "data-id": node.attrs.id,
+                            "data-level": node.attrs.level,
+                        };
+                        const listAttrs = (node.attrs.list || styles[node.type.name]?.defaultListAttributes) as ListAttributes | null;
+                        if (style.key.includes('_list_item') && listAttrs && listAttrs.style) {
+                            domAttrs['data-list-style'] = listAttrs.style;
+                        }
+                        return ["div", domAttrs, 0];
+                    },
+                    parseDOM: [{ 
+                        tag: `div[data-style="${style.key}"]`, 
+                        getAttrs: (dom: HTMLElement) => {
+                             const list: ListAttributes = {};
+                             if (dom.dataset.listStyle) list.style = dom.dataset.listStyle as any;
+                             // Note: start and reversed are not parsed from DOM as they are handled by a plugin
+                             return {
+                                id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, 
+                                level: dom.dataset.level ? parseInt(dom.dataset.level, 10) : 0,
+                                list: Object.keys(list).length > 0 ? list : null,
+                            };
+                        }
+                    }]
                 };
             }
         });
@@ -596,8 +795,6 @@ export const EditorCanvas: React.FC<{
             footnote: {
                 attrs: { id: { default: '' }, content: { default: '' } },
                 inclusive: false,
-                // FIX: Correct toDOM signature for marks. Use `mark: Mark` instead of `node: Node`.
-// FIX: Added 'as const' to ensure the return type is inferred as a tuple, matching the DOMOutputSpec type expected by ProseMirror.
                 toDOM: (mark: Mark) => ["sup", {
                     "data-footnote-id": mark.attrs.id,
                     "data-footnote-content": mark.attrs.content,
@@ -617,9 +814,7 @@ export const EditorCanvas: React.FC<{
         return new Schema({ nodes, marks });
     }, [styles]);
 
-    // FIX: Use ProsemirrorNode alias
     const blocksToDoc = useCallback((blocks: DocumentBlock[]): ProsemirrorNode => {
-        // FIX: Use ProsemirrorNode alias
         const pmNodes: ProsemirrorNode[] = blocks.map(block => {
             const type = editorSchema.nodes[block.style];
             if (!type) return null;
@@ -630,13 +825,10 @@ export const EditorCanvas: React.FC<{
             tempDiv.innerHTML = block.content;
             const contentFragment = DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content;
             return type.create({ id: block.id, level: block.level, list: block.list }, contentFragment);
-        // FIX: Use ProsemirrorNode alias
         }).filter((n): n is ProsemirrorNode => n !== null);
-        // FIX: Use ProsemirrorNode alias
         return editorSchema.node('doc', null, pmNodes);
     }, [editorSchema]);
 
-    // FIX: Use ProsemirrorNode alias
     const docToBlocks = useCallback((doc: ProsemirrorNode): DocumentBlock[] => {
         const blocks: DocumentBlock[] = [];
         const domSerializer = DOMSerializer.fromSchema(editorSchema);
@@ -679,12 +871,26 @@ export const EditorCanvas: React.FC<{
                 }),
                 dropCursor(), gapCursor(),
                 createFootnotePlugin(editorSchema),
+                createSearchPlugin(),
+                createListNumberingPlugin(styles),
                 new Plugin({
                     key: new PluginKey('apiPlugin'),
                     view(editorView) {
                         if (editorApiRef) {
                             editorApiRef.current = {
-                                applyStyle: (style) => { const type = editorSchema.nodes[style]; if (type) setBlockType(type)(editorView.state, editorView.dispatch); },
+                                applyStyle: (styleKey) => {
+                                    const { state, dispatch } = editorView;
+                                    const type = editorSchema.nodes[styleKey];
+                                    if (type) {
+                                        const styleDef = styles[styleKey];
+                                        let attrs = { ...state.selection.$from.parent.attrs };
+                                        delete attrs.list;
+                                        if (styleKey.includes('_list_item') && styleDef.defaultListAttributes) {
+                                            attrs.list = styleDef.defaultListAttributes;
+                                        }
+                                        setBlockType(type, attrs)(state, dispatch);
+                                    }
+                                },
                                 addBlock: (style) => { const { state, dispatch } = editorView; const type = editorSchema.nodes[style]; const endPos = state.doc.content.size; const tr = state.tr.insert(endPos, type.create({ id: Date.now() })); dispatch(tr); },
                                 addFootnote: () => {
                                     const { state, dispatch } = editorView;
@@ -732,10 +938,9 @@ export const EditorCanvas: React.FC<{
                                         dispatch(tr);
                                     }
                                 },
-                                insertLoremIpsum: (count: number) => {
+                                insertLoremIpsum: (options) => {
                                     const { state, dispatch } = editorView;
-                                    const newBlocks = generateLoremIpsumBlocks(count, styles, documentType);
-                                    // FIX: Use ProsemirrorNode alias
+                                    const newBlocks = generateLoremIpsumBlocks(options, documentType);
                                     const newNodes = newBlocks.map(block => {
                                         const type = editorSchema.nodes[block.style];
                                         if (!type) return null;
@@ -743,7 +948,6 @@ export const EditorCanvas: React.FC<{
                                         tempDiv.innerHTML = block.content;
                                         const contentFragment = DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content;
                                         return type.create({ id: block.id, level: block.level }, contentFragment);
-                                    // FIX: Use ProsemirrorNode alias
                                     }).filter((n): n is ProsemirrorNode => n !== null);
 
                                     if (newNodes.length > 0) {
@@ -752,7 +956,61 @@ export const EditorCanvas: React.FC<{
                                         dispatch(tr);
                                     }
                                 },
-                                search: () => { /* TODO */ }, goToSearchResult: () => { /* TODO */ },
+                                search: (query) => {
+                                    const { state, dispatch } = editorView;
+                                    if (!query) {
+                                        dispatch(state.tr.setMeta(searchPluginKey, { type: 'CLEAR' }));
+                                        return;
+                                    }
+                        
+                                    const results: { from: number; to: number }[] = [];
+                                    const queryLower = query.toLowerCase();
+                        
+                                    state.doc.descendants((node, pos) => {
+                                        if (node.isText && node.text) {
+                                            const textLower = node.text.toLowerCase();
+                                            let index = textLower.indexOf(queryLower);
+                                            while (index !== -1) {
+                                                results.push({
+                                                    from: pos + index,
+                                                    to: pos + index + query.length,
+                                                });
+                                                index = textLower.indexOf(queryLower, index + 1);
+                                            }
+                                        }
+                                    });
+                                    
+                                    const currentIndex = results.length > 0 ? 0 : -1;
+                                    const tr = state.tr.setMeta(searchPluginKey, { type: 'SEARCH', query, results, currentIndex });
+                                    
+                                    if (results.length > 0) {
+                                        const resultPos = results[currentIndex];
+                                        tr.setSelection(TextSelection.create(tr.doc, resultPos.from, resultPos.to));
+                                        tr.scrollIntoView();
+                                    }
+                                    
+                                    dispatch(tr);
+                                },
+                                goToSearchResult: (direction) => {
+                                    const { state, dispatch } = editorView;
+                                    const searchState = searchPluginKey.getState(state);
+                                    if (!searchState || searchState.results.length === 0) return;
+                        
+                                    let nextIndex = searchState.currentIndex + direction;
+                                    if (nextIndex < 0) {
+                                        nextIndex = searchState.results.length - 1;
+                                    } else if (nextIndex >= searchState.results.length) {
+                                        nextIndex = 0;
+                                    }
+                        
+                                    const tr = state.tr.setMeta(searchPluginKey, { type: 'NAVIGATE', currentIndex: nextIndex });
+                                    
+                                    const resultPos = searchState.results[nextIndex];
+                                    tr.setSelection(TextSelection.create(tr.doc, resultPos.from, resultPos.to));
+                                    tr.scrollIntoView();
+                                    
+                                    dispatch(tr);
+                                },
                                 scrollToBlock: (blockId) => {
                                     const { doc } = editorView.state; let targetPos = -1;
                                     doc.forEach((node, pos) => { if (node.attrs.id === blockId) targetPos = pos; });
@@ -819,6 +1077,7 @@ export const EditorCanvas: React.FC<{
                 const newState = viewRef.current.state.apply(tr);
                 viewRef.current.updateState(newState);
 
+                const searchState = searchPluginKey.getState(newState);
                 const { selection } = newState;
                 const node = selection.$anchor.node(1);
                 const selectionInfo: { 
@@ -828,11 +1087,16 @@ export const EditorCanvas: React.FC<{
                     isPaginated?: boolean;
                     totalPages?: number;
                     isSelectionEmpty?: boolean;
+                    searchResults?: { count: number, current: number };
                 } = { 
                     activeBlockId: node?.attrs.id || null,
                     canUndo: undo(newState),
                     canRedo: redo(newState),
                     isSelectionEmpty: newState.selection.empty,
+                    searchResults: {
+                        count: searchState?.results.length || 0,
+                        current: searchState?.currentIndex ?? -1,
+                    },
                 };
 
                 if (tr.docChanged) {
@@ -870,13 +1134,10 @@ export const EditorCanvas: React.FC<{
     useEffect(() => {
         if (viewRef.current && !isUpdatingFromOutside.current && blocks) {
             const state = viewRef.current.state;
-            // FIX: Use ProsemirrorNode alias
             const newDocFromProps = blocksToDoc(blocks);
 
             // Create versions of the documents without page breaks for comparison.
-            // FIX: Use ProsemirrorNode alias
             const currentDocStripped = stripPageBreaks(state.doc, editorSchema);
-            // FIX: Use ProsemirrorNode alias
             const newDocStripped = stripPageBreaks(newDocFromProps, editorSchema);
 
             // Only sync if the actual content (sans page breaks) is different.
