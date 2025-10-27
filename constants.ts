@@ -1,4 +1,3 @@
-// Fix: Corrected import path.
 import type { Style, StyleKey } from './types';
 
 export const STYLES: Record<StyleKey, Style> = {
@@ -284,7 +283,7 @@ export const STYLES: Record<StyleKey, Style> = {
       color: '#374151', // Gray-700
       fontWeight: '400', // Normal
       fontSize: 16,
-      lineHeight: 1.5,
+      lineHeight: 1.6,
       fontStyle: 'normal',
       textTransform: 'none',
       textDecoration: 'none',

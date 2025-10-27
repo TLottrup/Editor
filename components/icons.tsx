@@ -1,5 +1,3 @@
-
-
 import React from 'react';
 
 // A generic icon props type
@@ -197,7 +195,6 @@ export const BroomIcon: React.FC<IconProps> = (props) => (
     </svg>
 );
 
-{/* Fix: Add missing PaintbrushIcon for copy/paste style functionality. */}
 export const PaintbrushIcon: React.FC<IconProps> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <path d="M18.37 2.63L14 7l-1.59-1.59a2 2 0 0 0-2.82 0L8 7l9 9 1.59-1.59a2 2 0 0 0 0-2.82L17 10l4.37-4.37a2.12 2.12 0 1 0-3-3z"/>
@@ -226,6 +223,13 @@ export const SunIcon: React.FC<IconProps> = (props) => (
   </svg>
 );
 
+export const SparklesIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="m12 3-1.5 3L7 7.5l3 1.5L12 12l1.5-3L17 7.5l-3-1.5z"/>
+        <path d="M5 12.5 2 14l3 1.5L6.5 18l1.5-2.5L11 14l-3-1.5z"/>
+        <path d="m22 14-3-1.5-1.5-3-1.5 3-3 1.5 3 1.5 1.5 3 1.5-3z"/>
+    </svg>
+);
 
 // Table Icons
 export const RowInsertAboveIcon: React.FC<IconProps> = (props) => (
@@ -298,4 +302,19 @@ export const EditIcon: React.FC<IconProps> = (props) => (
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
   </svg>
+);
+
+export const SpinnerIcon: React.FC<IconProps> = (props) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props} className={`animate-spin ${props.className}`}>
+    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+  </svg>
+);
+
+export const FootnoteIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="M7 20-4 3l9 1 3.5 14.5" />
+        <path d="M13 20h9" />
+        <path d="m14 12 6 6" />
+        <path d="m18 12 6 6" />
+    </svg>
 );

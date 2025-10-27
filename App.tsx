@@ -1,13 +1,12 @@
-
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { PaginationDialog } from './components/PaginationDialog'; // New import
 import { Header } from './components/Header';
 import { StylePalette } from './components/StylePalette';
 import { EditorCanvas, EditorApi } from './components/EditorCanvas';
-import { TabbedPanel } from './components/TabbedPanel';
+import { TabbedPanel, Tab } from './components/TabbedPanel';
 import { ExportPanel } from './components/ExportPanel';
 import { MetadataPanel } from './components/MetadataPanel';
-import { PdfCssPanel } from './components/PdfCssPanel'; // Renamed from CssPanel
-import { VisualEditorCssPanel } from './components/VisualEditorCssPanel'; // New import
+import { CssPanel } from './components/CssPanel'; // New import for the container panel
 import { TocPanel } from './components/TocPanel';
 import { StructurePanel } from './components/StructurePanel';
 import { SearchPanel } from './components/SearchPanel';
@@ -15,9 +14,10 @@ import { DocumentTypeSelection } from './components/DocumentTypeSelection';
 import { StyleManager } from './components/StyleManager';
 import { STYLES as INITIAL_STYLES } from './constants';
 import { VersionHistoryPanel } from './components/VersionHistoryPanel'; // New import for VersionHistoryPanel
-// Fix: Import TabProps from types.ts
-import type { DocumentBlock, StyleKey, DocumentType, Metadata, Style, VisualEditorSettings, TabProps, DocumentVersion, EditorLayoutSettings } from './types';
+import { LoremIpsumDialog } from './components/LoremIpsumDialog'; // New import
+import type { DocumentBlock, StyleKey, DocumentType, Metadata, Style, VisualEditorSettings, DocumentVersion, EditorLayoutSettings } from './types';
 import { GoogleGenAI, Type } from "@google/genai";
+import { LoadingOverlay } from './components/LoadingOverlay';
 
 const journalTemplate: DocumentBlock[] = [
   { id: 2, style: 'abstract_heading', content: 'Resumé', level: 0 },
@@ -72,22 +72,31 @@ const defaultEditorLayout: EditorLayoutSettings = {
   marginLeft: '2cm',
 };
 
-// Fix: Use the imported TabProps interface
-const Tab: React.FC<TabProps> = ({ children }) => <>{children}</>;
+const convertCssUnitToPx = (value: string, dimension: 'width' | 'height' = 'width'): number => {
+    if (typeof document === 'undefined') return 0;
+    const temp = document.createElement("div");
+    temp.style.position = "absolute";
+    temp.style.visibility = "hidden";
+    
+    const unitMatch = value.match(/[a-zA-Z%]+$/);
+    const unit = unitMatch ? unitMatch[0] : 'px';
+    const number = parseFloat(value) || 0;
 
-const getPixelHeightForUnit = (cssUnit: string): number => {
-    if (typeof document === 'undefined') return 0; // Guard for SSR or non-browser env
-    const div = document.createElement('div');
-    div.style.position = 'absolute';
-    div.style.height = cssUnit;
-    div.style.top = '-9999px';
-    document.body.appendChild(div);
-    const height = div.offsetHeight;
-    document.body.removeChild(div);
-    return height || 0;
+    temp.style.width = `1000${unit}`;
+    temp.style.height = `1000${unit}`;
+
+    document.body.appendChild(temp);
+    let px = 0;
+    try {
+        const rect = temp.getBoundingClientRect();
+        px = (dimension === 'width' ? rect.width : rect.height) / 1000 * number;
+    } catch (e) {
+        console.error("Failed to convert CSS unit:", e);
+    } finally {
+        document.body.removeChild(temp);
+    }
+    return px;
 };
-
-const PAGE_GAP_PX = 20;
 
 
 const App: React.FC = () => {
@@ -152,6 +161,13 @@ const App: React.FC = () => {
 
     // Add layout styles for the content area within the page
     css += `
+      :root {
+        --page-margin-top: ${layoutSettings.marginTop};
+        --page-margin-right: ${layoutSettings.marginRight};
+        --page-margin-bottom: ${layoutSettings.marginBottom};
+        --page-margin-left: ${layoutSettings.marginLeft};
+        --page-break-height: calc(${layoutSettings.marginTop} + ${layoutSettings.marginBottom});
+      }
       #${editorWrapperId} .ProseMirror {
         padding: ${layoutSettings.marginTop} ${layoutSettings.marginRight} ${layoutSettings.marginBottom} ${layoutSettings.marginLeft} !important;
       }
@@ -244,11 +260,17 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ count: number; current: number }>({ count: 0, current: -1 });
   const [activeBlockId, setActiveBlockId] = useState<number | null>(null);
+  const [isPaginated, setIsPaginated] = useState(false);
+  const [totalPages, setTotalPages] = useState(1);
+  const [startPageNumber, setStartPageNumber] = useState(1);
+  const [isPaginationDialogOpen, setIsPaginationDialogOpen] = useState(false);
+  const [isLoremIpsumDialogOpen, setIsLoremIpsumDialogOpen] = useState(false);
+  const [isPaginating, setIsPaginating] = useState(false);
+  const [isSelectionEmpty, setIsSelectionEmpty] = useState(true);
 
   const [ai, setAi] = useState<GoogleGenAI | null>(null);
 
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
-  const [pageCount, setPageCount] = useState(1);
   
   useEffect(() => {
     try {
@@ -422,6 +444,7 @@ ${html}
 
   const handleAddBlock = useCallback((styleKey: StyleKey) => editorApiRef.current?.addBlock(styleKey), []);
   const handleApplyStyle = useCallback((styleKey: StyleKey) => editorApiRef.current?.applyStyle(styleKey), []);
+  const handleAddFootnote = useCallback(() => editorApiRef.current?.addFootnote(), []);
 
   const handleMetadataChange = useCallback((newMetadataAction: React.SetStateAction<Metadata>) => {
     setMetadata(newMetadataAction as any);
@@ -438,31 +461,79 @@ ${html}
   const goToPrevResult = useCallback(() => editorApiRef.current?.goToSearchResult(-1), []);
 
   const handleBlockNavigationClick = useCallback((blockId: number) => editorApiRef.current?.scrollToBlock(blockId), []);
-  
-  const layoutInPixels = useMemo(() => ({
-    pageHeight: getPixelHeightForUnit(editorLayout.paperHeight),
-    footerArea: getPixelHeightForUnit(editorLayout.marginBottom), // Use dynamic margin
-  }), [editorLayout.paperHeight, editorLayout.marginBottom]);
 
-  const handleSelectionChange = useCallback(({activeBlockId, searchResults, canUndo, canRedo}) => {
+  const handleSelectionChange = useCallback(({activeBlockId, searchResults, canUndo, canRedo, isSelectionEmpty, isPaginated: paginatedStatus, totalPages: newTotalPages}) => {
     setActiveBlockId(activeBlockId);
     if (searchResults) setSearchResults(searchResults);
     setCanUndo(canUndo);
     setCanRedo(canRedo);
+    if (isSelectionEmpty !== undefined) {
+      setIsSelectionEmpty(isSelectionEmpty);
+    }
+    if (paginatedStatus !== undefined) {
+      setIsPaginated(paginatedStatus);
+    }
+    if (newTotalPages !== undefined) {
+        setTotalPages(newTotalPages);
+    }
   }, []);
+  
+  const handleTogglePagination = useCallback(() => {
+    if (isPaginated) {
+      editorApiRef.current?.removePagination();
+    } else {
+      setIsPaginationDialogOpen(true);
+    }
+  }, [isPaginated]);
+
+  const handleConfirmPagination = useCallback((startPage: number) => {
+    setIsPaginationDialogOpen(false);
+    setIsPaginating(true);
+    // Use a timeout to allow the UI to update and show the loading spinner
+    setTimeout(() => {
+        try {
+            editorApiRef.current?.runPagination(startPage);
+            setStartPageNumber(startPage);
+        } catch (e) {
+            console.error("Failed during pagination:", e);
+            alert("Der opstod en fejl under sideinddelingen.");
+        } finally {
+            setIsPaginating(false);
+        }
+    }, 50);
+  }, []);
+  
+  const handleConfirmLoremIpsum = useCallback((count: number) => {
+    editorApiRef.current?.insertLoremIpsum(count);
+    setIsLoremIpsumDialogOpen(false);
+  }, []);
+
+  const totalEditorHeight = useMemo(() => {
+    if (!isPaginated) return undefined;
+    const pageHeightPx = convertCssUnitToPx(editorLayout.paperHeight, 'height');
+    const gutterHeight = 20; // From CSS: .page-break-gutter height
+    if (isNaN(pageHeightPx) || pageHeightPx === 0) return undefined;
+    return totalPages * pageHeightPx + (totalPages - 1) * gutterHeight;
+  }, [isPaginated, totalPages, editorLayout.paperHeight]);
 
   if (!documentType || !blocks || !metadata) {
     return <DocumentTypeSelection onSelect={handleSelectDocumentType} />;
   }
-  
-  // Refactored calculation for clarity and consistency.
-  // This ensures the container is always large enough for all pages and the gaps between them.
-  const pageHeightWithGap = layoutInPixels.pageHeight + PAGE_GAP_PX;
-  const containerMinHeight = pageCount > 0 ? (pageCount * pageHeightWithGap) - PAGE_GAP_PX : 0;
 
   return (
     <div className="flex flex-col h-screen font-sans bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
       {isStyleManagerOpen && <StyleManager styles={styles} setStyles={updateAndPersistStyles} onClose={() => setIsStyleManagerOpen(false)} />}
+      <PaginationDialog
+        isOpen={isPaginationDialogOpen}
+        onClose={() => setIsPaginationDialogOpen(false)}
+        onConfirm={handleConfirmPagination}
+      />
+      <LoremIpsumDialog
+        isOpen={isLoremIpsumDialogOpen}
+        onClose={() => setIsLoremIpsumDialogOpen(false)}
+        onConfirm={handleConfirmLoremIpsum}
+      />
+      {isPaginating && <LoadingOverlay />}
       <Header 
         onImportWord={handleImportWord} 
         isLeftSidebarOpen={isLeftSidebarOpen}
@@ -474,6 +545,7 @@ ${html}
         canUndo={canUndo}
         canRedo={canRedo}
         onRemoveEmptyBlocks={handleRemoveEmptyBlocks}
+        onGenerateLoremIpsum={() => setIsLoremIpsumDialogOpen(true)}
         theme={theme}
         onToggleTheme={handleThemeToggle}
         metadata={metadata}
@@ -481,6 +553,8 @@ ${html}
         documentType={documentType}
         onTitleFocus={() => editorApiRef.current?.focusTitle()}
         onSaveVersion={saveCurrentVersion}
+        onTogglePagination={handleTogglePagination}
+        isPaginated={isPaginated}
       />
       <main className="flex-grow flex overflow-hidden">
         {isLeftSidebarOpen && (
@@ -490,6 +564,8 @@ ${html}
                   blocks={blocks}
                   onAddBlock={handleAddBlock}
                   onApplyStyle={handleApplyStyle}
+                  onAddFootnote={handleAddFootnote}
+                  isSelectionEmpty={isSelectionEmpty}
                   documentType={documentType}
                   selectedBlockIds={new Set(activeBlockId ? [activeBlockId] : [])}
                   disabledStyles={new Set()}
@@ -499,48 +575,16 @@ ${html}
         )}
         <div className="flex-grow min-w-0 overflow-y-auto bg-gray-200 dark:bg-slate-900 p-4 sm:p-8">
             <div 
-              className="pages-container"
-              style={{ minHeight: containerMinHeight }}
+              id="prosemirror-editor-wrapper" 
+              className={`editor-container ${isPaginated ? 'paginated' : ''}`}
+              style={{ 
+                  width: editorLayout.paperWidth, 
+                  minHeight: isPaginated && totalEditorHeight ? `${totalEditorHeight}px` : editorLayout.paperHeight 
+              }}
+              data-start-page={isPaginated ? startPageNumber : undefined}
+              data-last-page={isPaginated ? startPageNumber + totalPages - 1 : undefined}
+              data-total-pages={isPaginated ? totalPages : undefined}
             >
-              {Array.from({ length: pageCount }).map((_, i) => (
-                  <div 
-                      key={`bg-${i}`}
-                      className="page-background"
-                      style={{
-                          top: `${i * pageHeightWithGap}px`,
-                          height: `${layoutInPixels.pageHeight}px`, // Use pixels for consistency
-                          width: editorLayout.paperWidth,
-                      }}
-                  />
-              ))}
-
-              {Array.from({ length: pageCount }).map((_, i) => {
-                  const pageTop = i * pageHeightWithGap;
-                  const footerTop = pageTop + layoutInPixels.pageHeight - layoutInPixels.footerArea;
-
-                  const footerStyle: React.CSSProperties = {
-                      width: editorLayout.paperWidth,
-                      height: `${layoutInPixels.footerArea}px`,
-                      top: `${footerTop}px`,
-                      paddingLeft: editorLayout.marginLeft,
-                      paddingRight: editorLayout.marginRight,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                  };
-                  
-                  return (
-                      <div 
-                          key={`footer-${i}`}
-                          className="page-footer"
-                          style={footerStyle}
-                      >
-                          Side {i + 1} af {pageCount}
-                      </div>
-                  );
-              })}
-              
-              <div id="prosemirror-editor-wrapper" className="editor-container" style={{maxWidth: editorLayout.paperWidth}}>
               <EditorCanvas 
                 styles={styles}
                 documentType={documentType}
@@ -550,9 +594,7 @@ ${html}
                 onSelectionChange={handleSelectionChange}
                 searchQuery={searchQuery}
                 layoutSettings={editorLayout}
-                onPaginationChange={setPageCount}
               />
-              </div>
             </div>
         </div>
         {isRightSidebarOpen && (
@@ -604,22 +646,14 @@ ${html}
                         />
                       </Tab>
                       <Tab label="CSS">
-                        <TabbedPanel>
-                          <Tab label="PDF CSS Editor">
-                            <PdfCssPanel
-                              pdfCss={pdfCss}
-                              onPdfCssChange={setPdfCss}
-                            />
-                          </Tab>
-                          <Tab label="Editor CSS">
-                            <VisualEditorCssPanel
-                              styles={styles}
-                              onStyleChange={updateAndPersistStyles}
-                              layoutSettings={editorLayout}
-                              onLayoutSettingsChange={updateAndPersistLayout}
-                            />
-                          </Tab>
-                        </TabbedPanel>
+                        <CssPanel
+                          pdfCss={pdfCss}
+                          onPdfCssChange={setPdfCss}
+                          styles={styles}
+                          onStyleChange={updateAndPersistStyles}
+                          layoutSettings={editorLayout}
+                          onLayoutSettingsChange={updateAndPersistLayout}
+                        />
                       </Tab>
                       <Tab label="Versioner">
                         <VersionHistoryPanel

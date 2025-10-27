@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import type { DocumentBlock, DocumentType, Style, StyleKey } from '../types';
 import { ChevronRightIcon } from './icons';
 
@@ -165,7 +166,7 @@ const StructureNodeView: React.FC<{
     return (
         <div className="text-xs font-mono">
             <div 
-                className={`flex items-center py-0.5 rounded ${node.blockId ? 'cursor-pointer hover:bg-gray-700/50' : ''}`}
+                className={`flex items-center py-0.5 rounded ${node.blockId ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700/50' : ''}`}
                 style={{ paddingLeft: `${level * 1.5}rem` }}
                 onClick={() => node.blockId && onNodeClick(node.blockId)}
             >
@@ -174,7 +175,7 @@ const StructureNodeView: React.FC<{
                         e.stopPropagation();
                         toggleNode(node.id);
                     }}
-                    className={`p-0.5 rounded text-gray-400 hover:bg-gray-700 ${!hasChildren ? 'invisible' : ''}`}
+                    className={`p-0.5 rounded text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 ${!hasChildren ? 'invisible' : ''}`}
                     aria-label={isExpanded ? `Collapse ${node.tag}` : `Expand ${node.tag}`}
                 >
                     <ChevronRightIcon className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
@@ -182,7 +183,7 @@ const StructureNodeView: React.FC<{
                 <span className="w-1.5 h-1.5 bg-blue-400 rounded-full mr-2 ml-1 flex-shrink-0"></span>
                 <span className="text-blue-400">{node.tag}</span>
                 {node.contentPreview && (
-                    <span className="text-gray-400 ml-2 truncate whitespace-nowrap overflow-hidden">
+                    <span className="text-gray-500 dark:text-gray-400 ml-2 truncate whitespace-nowrap overflow-hidden">
                         {`"${node.contentPreview}"`}
                     </span>
                 )}
@@ -206,73 +207,83 @@ const StructureNodeView: React.FC<{
 };
 
 interface StructurePanelProps {
-    blocks: DocumentBlock[];
-    documentType: DocumentType;
-    onBlockClick: (blockId: number) => void;
-    styles: Record<StyleKey, Style>;
+  blocks: DocumentBlock[];
+  documentType: DocumentType;
+  styles: Record<StyleKey, Style>;
+  onBlockClick: (blockId: number) => void;
 }
 
-export const StructurePanel: React.FC<StructurePanelProps> = ({ blocks, documentType, onBlockClick, styles }) => {
-  const format = documentType === 'journal' ? 'jats' : 'bits';
-  
-  const abstractBlocks = blocks.filter(b => b.style === 'abstract' || b.style === 'abstract_heading');
-  const bodyBlocks = blocks.filter(b => b.style !== 'abstract' && b.style !== 'abstract_heading');
-
-  const abstractTree = buildStructureTree(abstractBlocks, format, 'abstract', styles);
-  const bodyTree = buildStructureTree(bodyBlocks, format, 'body', styles);
-
-  const rootNode: StructureNode = {
-      id: 'root',
-      tag: format === 'jats' ? 'article' : 'book',
-      children: []
-  };
-
-  if (format === 'jats') {
-      const articleMetaNode: StructureNode = { id: 'root-am', tag: 'article-meta', children: abstractTree };
-      const frontNode: StructureNode = { id: 'root-front', tag: 'front', children: [
-          { id: 'root-jm', tag: 'journal-meta', children: [] },
-          articleMetaNode,
-      ]};
-      const bodyNode: StructureNode = { id: 'root-body', tag: 'body', children: bodyTree };
-      const backNode: StructureNode = { id: 'root-back', tag: 'back', children: [] };
-      rootNode.children.push(frontNode, bodyNode, backNode);
-  } else { // bits
-       const bookMetaNode: StructureNode = { id: 'root-bm', tag: 'book-meta', children: abstractTree };
-       const bookBodyNode: StructureNode = { id: 'root-bb', tag: 'book-body', children: bodyTree };
-       const bookBackNode: StructureNode = { id: 'root-bk', tag: 'book-back', children: [] };
-       rootNode.children.push(bookMetaNode, bookBodyNode, bookBackNode);
-  }
-  
+export const StructurePanel: React.FC<StructurePanelProps> = ({ blocks, documentType, styles, onBlockClick }) => {
+  const [format, setFormat] = useState<'jats' | 'bits'>(documentType === 'book' ? 'bits' : 'jats');
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const defaultExpanded = ['root', 'root-front', 'root-body', 'root-bm', 'root-bb', 'root-am'];
-    setExpandedNodes(new Set(defaultExpanded));
-  }, [documentType]);
+  const tree = useMemo(() => buildStructureTree(blocks, format, format, styles), [blocks, format, styles]);
 
-  const toggleNode = (nodeId: string) => {
-    setExpandedNodes(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(nodeId)) {
-            newSet.delete(nodeId);
-        } else {
-            newSet.add(nodeId);
+  useEffect(() => {
+    // Auto-expand all nodes when the tree is first built or format changes
+    const allIds = new Set<string>();
+    const collectIds = (nodes: StructureNode[]) => {
+      for (const node of nodes) {
+        allIds.add(node.id);
+        if (node.children.length > 0) {
+          collectIds(node.children);
         }
-        return newSet;
+      }
+    };
+    collectIds(tree);
+    setExpandedNodes(allIds);
+  }, [tree]);
+
+  const toggleNode = (id: string) => {
+    setExpandedNodes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
     });
   };
 
   return (
     <div className="flex flex-col h-full">
-      <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-700 pb-2">Dokumentstruktur</h2>
-      <div className="bg-gray-800 dark:bg-black/30 text-gray-200 dark:text-gray-300 p-3 rounded-md overflow-auto flex-grow">
-        <StructureNodeView 
-            node={rootNode} 
+      <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4 border-b dark:border-gray-700 pb-2">
+        Dokumentstruktur ({format.toUpperCase()})
+      </h2>
+      <div className="flex-shrink-0 mb-2">
+        <div className="flex rounded-md shadow-sm">
+          <button
+            onClick={() => setFormat('jats')}
+            disabled={documentType === 'book'}
+            className={`flex-1 px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-l-md transition-colors
+              ${format === 'jats' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}
+              ${documentType === 'book' ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            JATS
+          </button>
+          <button
+            onClick={() => setFormat('bits')}
+            disabled={documentType === 'journal'}
+            className={`-ml-px flex-1 px-3 py-2 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-r-md transition-colors
+              ${format === 'bits' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 dark:bg-gray-800 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}
+              ${documentType === 'journal' ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            BITS
+          </button>
+        </div>
+      </div>
+      <div className="flex-grow min-h-0 overflow-y-auto bg-gray-100 dark:bg-gray-900/70 rounded-md p-2 -mx-4">
+        {tree.map((node) => (
+          <StructureNodeView
+            key={node.id}
+            node={node}
             expandedNodes={expandedNodes}
             toggleNode={toggleNode}
             level={0}
             onNodeClick={onBlockClick}
-        />
+          />
+        ))}
       </div>
     </div>
   );

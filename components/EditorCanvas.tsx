@@ -1,11 +1,11 @@
-
 import React, { useEffect, useRef, useMemo, useState, useCallback } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import type { DocumentBlock, DocumentType, StyleKey, TableData, ImageData, Style, TableCell, EditorLayoutSettings } from '../types';
 
 import { EditorState, NodeSelection, Plugin, Transaction, Command, PluginKey } from 'prosemirror-state';
 import { EditorView, Decoration, DecorationSet } from 'prosemirror-view';
-import { Schema, DOMParser, Node, DOMSerializer, NodeSpec } from 'prosemirror-model';
+// FIX: Alias Prosemirror's Node to ProsemirrorNode to avoid conflict with DOM's Node. Import Mark.
+import { Schema, DOMParser, Node as ProsemirrorNode, DOMSerializer, NodeSpec, Fragment, MarkType, Mark } from 'prosemirror-model';
 import { schema as basicSchema } from 'prosemirror-schema-basic';
 import { keymap } from 'prosemirror-keymap';
 import { baseKeymap, setBlockType, toggleMark, chainCommands, splitBlock, liftEmptyBlock, createParagraphNear, newlineInCode } from 'prosemirror-commands';
@@ -13,6 +13,21 @@ import { history, undo, redo } from 'prosemirror-history';
 import { dropCursor } from 'prosemirror-dropcursor';
 import { gapCursor } from 'prosemirror-gapcursor';
 import { TrashIcon, RowInsertAboveIcon, RowInsertBelowIcon, ColumnInsertLeftIcon, ColumnInsertRightIcon, MergeCellsIcon, SplitCellIcon } from './icons';
+
+// Helper function to strip page_break nodes for state comparison
+// FIX: Use ProsemirrorNode alias
+const stripPageBreaks = (doc: ProsemirrorNode, schema: Schema): ProsemirrorNode => {
+    // FIX: Use ProsemirrorNode alias
+    const content: ProsemirrorNode[] = [];
+    doc.forEach(node => {
+        if (node.type.name !== 'page_break') {
+            content.push(node);
+        }
+    });
+    // FIX: Use ProsemirrorNode alias
+    return schema.node('doc', null, Fragment.from(content));
+};
+
 
 const TableEditor: React.FC<{ data: TableData; onChange: (newData: TableData) => void; }> = ({ data, onChange }) => {
     const [internalData, setInternalData] = useState(data);
@@ -90,7 +105,7 @@ const TableEditor: React.FC<{ data: TableData; onChange: (newData: TableData) =>
             <input 
                 type="text" 
                 value={internalData.caption}
-                onChange={(e) => onChange({ ...internalData, caption: e.target.value })}
+                onChange={(e) => onChange({ ...internalData, rows: internalData.rows, caption: e.target.value })}
                 placeholder="Table caption"
                 className="w-full mt-2 text-center text-sm italic bg-transparent border-none focus:outline-none focus:ring-0 p-1"
             />
@@ -125,9 +140,11 @@ class ReactNodeView {
     root: Root;
     view: EditorView;
     getPos: () => number;
-    node: Node;
+    // FIX: Use ProsemirrorNode alias
+    node: ProsemirrorNode;
     
-    constructor(node: Node, view: EditorView, getPos: () => number, component: React.FC<any>, props: any) {
+    // FIX: Use ProsemirrorNode alias
+    constructor(node: ProsemirrorNode, view: EditorView, getPos: () => number, component: React.FC<any>, props: any) {
         this.node = node;
         this.view = view;
         this.getPos = getPos;
@@ -139,7 +156,8 @@ class ReactNodeView {
         this.root.render(React.createElement(component, props));
     }
 
-    update(node: Node) {
+    // FIX: Use ProsemirrorNode alias
+    update(node: ProsemirrorNode) {
         if (node.type !== this.node.type) return false;
         this.node = node;
         return true;
@@ -160,6 +178,10 @@ export interface EditorApi {
     focusTitle: () => void;
     undo: () => void;
     redo: () => void;
+    runPagination: (startPage: number) => void;
+    removePagination: () => void;
+    insertLoremIpsum: (count: number) => void;
+    addFootnote: () => void;
 }
 
 const enterKeyCommand: Command = (state, dispatch) => {
@@ -193,31 +215,326 @@ const enterKeyCommand: Command = (state, dispatch) => {
     return true;
 };
 
-const getPixelHeightForUnit = (cssUnit: string): number => {
-    if (typeof document === 'undefined' || !cssUnit) return 0;
-    const div = document.createElement('div');
-    div.style.position = 'absolute';
-    div.style.height = cssUnit;
-    div.style.top = '-9999px';
-    document.body.appendChild(div);
-    const height = div.offsetHeight;
-    document.body.removeChild(div);
-    return height || 0;
+const createPaginationCommand = (layoutSettings: EditorLayoutSettings, styles: Record<StyleKey, Style>, startPage: number = 1): Command => (state, dispatch) => {
+    const { schema } = state;
+    const pageBreakType = schema.nodes.page_break;
+    if (!pageBreakType) return false;
+
+    // Helper to convert CSS units to pixels
+    const convertToPx = (value: string, dimension: 'width' | 'height' = 'width'): number => {
+        const temp = document.createElement("div");
+        temp.style.position = "absolute";
+        temp.style.visibility = "hidden";
+        temp.style.width = '1000' + value.replace(/[^a-z%]/g, '');
+        temp.style.height = '1000' + value.replace(/[^a-z%]/g, '');
+        document.body.appendChild(temp);
+        const rect = temp.getBoundingClientRect();
+        const px = (dimension === 'width' ? rect.width : rect.height) / 1000 * parseFloat(value);
+        document.body.removeChild(temp);
+        return px;
+    };
+
+    const paperHeightPx = convertToPx(layoutSettings.paperHeight, 'height');
+    const marginTopPx = convertToPx(layoutSettings.marginTop, 'height');
+    const marginBottomPx = convertToPx(layoutSettings.marginBottom, 'height');
+    const paperWidthPx = convertToPx(layoutSettings.paperWidth, 'width');
+    const marginLeftPx = convertToPx(layoutSettings.marginLeft, 'width');
+    const marginRightPx = convertToPx(layoutSettings.marginRight, 'width');
+    
+    const contentHeightAvailable = paperHeightPx - marginTopPx - marginBottomPx;
+    const contentWidth = `${paperWidthPx - marginLeftPx - marginRightPx}px`;
+
+    const measurementNode = document.createElement('div');
+    measurementNode.style.position = 'absolute';
+    measurementNode.style.top = '-9999px';
+    measurementNode.style.left = '-9999px';
+    measurementNode.style.width = contentWidth;
+    measurementNode.className = 'ProseMirror prosemirror-styled-content'; // Apply same styles
+    document.body.appendChild(measurementNode);
+    
+    const serializer = DOMSerializer.fromSchema(schema);
+
+    let tr = state.tr;
+    
+    // 1. Remove all existing page breaks
+    const positionsToRemove: number[] = [];
+    state.doc.descendants((node, pos) => {
+        if (node.type === pageBreakType) {
+            positionsToRemove.push(pos);
+        }
+    });
+    // Iterate backwards to not mess up positions
+    for (let i = positionsToRemove.length - 1; i >= 0; i--) {
+        tr = tr.delete(positionsToRemove[i], positionsToRemove[i] + 1);
+    }
+
+    // After removing breaks, the transaction's doc is the one to measure against
+    const cleanDoc = tr.doc;
+    
+    const nodeInfos: {node: ProsemirrorNode, pos: number}[] = [];
+    cleanDoc.forEach((node, pos) => {
+        nodeInfos.push({node, pos});
+    });
+    
+    measurementNode.innerHTML = ''; // Clear out the full doc
+
+    let pageCounter = startPage;
+    const positionsToInsert: { pos: number, pageNumber: number }[] = [];
+    
+    let currentPageContent: ProsemirrorNode[] = [];
+    let cumulativeHeight = 0;
+
+    for (let i = 0; i < nodeInfos.length; i++) {
+        const { node, pos } = nodeInfos[i];
+        
+        const style = styles[node.type.name as StyleKey];
+        const isMajorHeading = style && (style.key === 'del' || style.key === 'kapitel');
+        
+        const virtualPage = document.createElement('div');
+        [...currentPageContent, node].forEach(n => virtualPage.appendChild(serializer.serializeNode(n)));
+        measurementNode.appendChild(virtualPage);
+        const newTotalHeight = measurementNode.scrollHeight;
+        measurementNode.innerHTML = ''; // Clean up
+
+        const forceBreakBefore = isMajorHeading && i > 0 && currentPageContent.length > 0;
+        
+        if (forceBreakBefore || (newTotalHeight > contentHeightAvailable && i > 0 && currentPageContent.length > 0)) {
+            let breakPos = pos;
+            
+            const prevNode = currentPageContent[currentPageContent.length - 1];
+            const prevNodeInfo = nodeInfos[i - 1];
+            const prevStyle = styles[prevNode.type.name as StyleKey];
+            const isPrevNodeHeading = prevStyle && (prevStyle.key.includes('heading') || prevStyle.key === 'kapitel' || prevStyle.key === 'del');
+
+            if (!forceBreakBefore && isPrevNodeHeading) {
+                // Widow prevention: If the last item on the page is a heading, move it to the next page.
+                breakPos = prevNodeInfo.pos;
+                currentPageContent.pop(); // Remove the heading from this page's content
+            }
+            
+            const lastBreak = positionsToInsert[positionsToInsert.length - 1];
+            if (!lastBreak || lastBreak.pos !== breakPos) {
+                 positionsToInsert.push({ pos: breakPos, pageNumber: pageCounter });
+                 pageCounter++;
+            }
+            
+            // Start new page
+            currentPageContent = [];
+            if (!forceBreakBefore && isPrevNodeHeading) {
+                currentPageContent.push(prevNode); // The heading starts the new page
+            }
+            currentPageContent.push(node); // The current node is on the new page
+        } else {
+            currentPageContent.push(node);
+        }
+    }
+
+    // 3. Insert new page breaks
+    for (let i = positionsToInsert.length - 1; i >= 0; i--) {
+        const { pos, pageNumber } = positionsToInsert[i];
+        const pageBreakNode = pageBreakType.create({ pageNumber });
+        tr = tr.insert(pos, pageBreakNode);
+    }
+    
+    document.body.removeChild(measurementNode);
+    
+    if (dispatch && tr.docChanged) {
+        tr.setMeta('addToHistory', false);
+        dispatch(tr);
+        return true;
+    }
+    
+    return false;
 };
 
-const paginationPluginKey = new PluginKey('pagination');
+// --- Start Lorem Ipsum Generation ---
+const LOREM_IPSUM_WORDS = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.".split(" ");
+
+const generateSentence = (wordCount: number) => {
+    let sentence = "";
+    for (let i = 0; i < wordCount; i++) {
+        sentence += LOREM_IPSUM_WORDS[Math.floor(Math.random() * LOREM_IPSUM_WORDS.length)] + " ";
+    }
+    return sentence.trim() + ".";
+};
+
+const generateParagraph = (sentenceCount: number) => {
+    let paragraph = "";
+    for (let i = 0; i < sentenceCount; i++) {
+        paragraph += generateSentence(Math.floor(Math.random() * 10) + 5) + " ";
+    }
+    return paragraph.trim();
+};
+
+const generateLoremIpsumBlocks = (paragraphCount: number, availableStyles: Record<StyleKey, Style>, documentType: DocumentType): DocumentBlock[] => {
+    const blocks: DocumentBlock[] = [];
+    let paragraphsGenerated = 0;
+
+    const textStyles = Object.values(availableStyles).filter(s => s.key !== 'table' && s.key !== 'image');
+    const headingStyles = textStyles.filter(s => s.level !== undefined && s.level >= 0).sort((a, b) => (a.level || 0) - (b.level || 0));
+    const bodyStyles = textStyles.filter(s => ['body', 'petit'].includes(s.key));
+    const listStyles = textStyles.filter(s => s.key.includes('_list_item'));
+    
+    let currentHeadingLevel = -1;
+
+    if (documentType === 'book') {
+        blocks.push({
+            id: Date.now() + blocks.length,
+            style: 'del',
+            content: generateSentence(3),
+            level: 0,
+        });
+        currentHeadingLevel = 0;
+    }
+
+    while (paragraphsGenerated < paragraphCount) {
+        // Add a heading
+        const nextHeadingLevel = Math.floor(Math.random() * 2) + currentHeadingLevel + 1;
+        const potentialHeadings = headingStyles.filter(s => (s.level || 0) >= nextHeadingLevel);
+        const headingStyle = potentialHeadings.length > 0 ? potentialHeadings[0] : headingStyles[headingStyles.length - 1];
+        
+        if (headingStyle) {
+            blocks.push({
+                id: Date.now() + blocks.length,
+                style: headingStyle.key,
+                content: generateSentence(Math.floor(Math.random() * 4) + 3),
+                level: 0
+            });
+            currentHeadingLevel = headingStyle.level || 0;
+        }
+
+        // Add some paragraphs
+        const numParagraphs = Math.floor(Math.random() * 3) + 1;
+        for (let i = 0; i < numParagraphs && paragraphsGenerated < paragraphCount; i++) {
+            const bodyStyle = bodyStyles[Math.floor(Math.random() * bodyStyles.length)] || { key: 'body' };
+            blocks.push({
+                id: Date.now() + blocks.length,
+                style: bodyStyle.key,
+                content: generateParagraph(Math.floor(Math.random() * 4) + 3),
+                level: 0
+            });
+            paragraphsGenerated++;
+        }
+
+        // Maybe add a list
+        if (Math.random() > 0.5 && listStyles.length > 0 && paragraphsGenerated < paragraphCount) {
+            const listStyle = listStyles[Math.floor(Math.random() * listStyles.length)];
+            const numListItems = Math.floor(Math.random() * 4) + 3;
+            for (let i = 0; i < numListItems; i++) {
+                blocks.push({
+                    id: Date.now() + blocks.length,
+                    style: listStyle.key,
+                    content: generateSentence(Math.floor(Math.random() * 8) + 4),
+                    level: 0
+                });
+            }
+            paragraphsGenerated++; // Count a list as one paragraph for simplicity
+        }
+    }
+
+    return blocks;
+};
+// --- End Lorem Ipsum Generation ---
+
+// --- Footnote Plugin ---
+const footnotePluginKey = new PluginKey('footnotePlugin');
+
+const createFootnotePlugin = (schema: Schema) => {
+    let currentPopover: { dom: HTMLElement, destroy: () => void } | null = null;
+    
+    return new Plugin({
+        key: footnotePluginKey,
+        props: {
+            decorations(state) {
+                const footnoteType = schema.marks.footnote;
+                if (!footnoteType) return DecorationSet.empty;
+
+                const decorations: Decoration[] = [];
+                let footnoteCounter = 1;
+                
+                state.doc.descendants((node, pos) => {
+                    if (node.isText) {
+                        const hasFootnote = node.marks.some(mark => mark.type === footnoteType);
+                        if (hasFootnote) {
+                            decorations.push(
+                                Decoration.widget(pos + node.nodeSize, () => {
+                                    const span = document.createElement('span');
+                                    span.className = 'footnote-marker-number';
+                                    span.textContent = String(footnoteCounter++);
+                                    return span;
+                                })
+                            );
+                        }
+                    }
+                });
+                return DecorationSet.create(state.doc, decorations);
+            },
+            handleClick(view, pos, event) {
+                const { schema, doc } = view.state;
+                const footnoteType = schema.marks.footnote;
+                if (!footnoteType) return false;
+                
+                const $pos = doc.resolve(pos);
+                const marks = $pos.marks();
+                const footnoteMark = marks.find(mark => mark.type === footnoteType);
+
+                if (currentPopover) {
+                    currentPopover.destroy();
+                    currentPopover = null;
+                }
+                
+                if (footnoteMark) {
+                    event.preventDefault();
+                    
+                    const popover = document.createElement('div');
+                    popover.className = 'footnote-popover';
+                    popover.textContent = footnoteMark.attrs.content;
+                    
+                    document.body.appendChild(popover);
+
+                    const coords = view.coordsAtPos(pos);
+                    popover.style.left = `${coords.left}px`;
+                    popover.style.top = `${coords.bottom + 5}px`;
+
+                    const clickOutsideHandler = (e: MouseEvent) => {
+                        if (!popover.contains(e.target as Node)) {
+                            destroyPopover();
+                        }
+                    };
+                    
+                    const destroyPopover = () => {
+                        document.removeEventListener('click', clickOutsideHandler);
+                        if (popover.parentNode) {
+                            popover.parentNode.removeChild(popover);
+                        }
+                        currentPopover = null;
+                    };
+                    
+                    document.addEventListener('click', clickOutsideHandler, { once: true });
+                    
+                    currentPopover = { dom: popover, destroy: destroyPopover };
+
+                    return true;
+                }
+
+                return false;
+            },
+        },
+    });
+};
+
+// --- End Footnote Plugin ---
 
 export const EditorCanvas: React.FC<{
   blocks: DocumentBlock[];
   documentType: DocumentType;
   onBlocksChange: (blocks: DocumentBlock[]) => void;
   editorApiRef: React.MutableRefObject<EditorApi | null>;
-  onSelectionChange: (selectionInfo: { activeBlockId: number | null, canUndo: boolean, canRedo: boolean, searchResults?: { count: number, current: number } }) => void;
+  onSelectionChange: (selectionInfo: { activeBlockId: number | null, canUndo: boolean, canRedo: boolean, searchResults?: { count: number, current: number }, isPaginated?: boolean, totalPages?: number, isSelectionEmpty?: boolean }) => void;
   searchQuery: string;
   styles: Record<StyleKey, Style>;
   layoutSettings: EditorLayoutSettings;
-  onPaginationChange: (pageCount: number) => void;
-}> = ({ blocks, onBlocksChange, editorApiRef, onSelectionChange, searchQuery, styles, layoutSettings, onPaginationChange }) => {
+}> = ({ blocks, documentType, onBlocksChange, editorApiRef, onSelectionChange, searchQuery, styles, layoutSettings }) => {
     const editorRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const isUpdatingFromOutside = useRef(false);
@@ -228,12 +545,29 @@ export const EditorCanvas: React.FC<{
             text: basicSchema.spec.nodes.get("text") as NodeSpec,
             hard_break: basicSchema.spec.nodes.get("hard_break") as NodeSpec,
             page_break: {
-                group: 'block',
+                group: "block",
                 atom: true,
-                selectable: false,
-                toDOM: () => ['div', { 'data-page-break': 'true', style: 'display: none;' }],
-                parseDOM: [{ tag: 'div[data-page-break]' }],
-            },
+                attrs: { pageNumber: { default: 1 } },
+                // FIX: Use ProsemirrorNode alias
+                toDOM: (node: ProsemirrorNode) => {
+                    const pageNum = node.attrs.pageNumber;
+                    return ["div", { class: "page-break-container" },
+                        ["div", { class: "page-break-footer" }, `Slut side ${pageNum}`],
+                        ["div", { class: "page-break-gutter" }],
+                        ["div", { class: "page-break-header" }, `Start side ${pageNum + 1}`]
+                    ];
+                },
+                parseDOM: [{
+                    tag: "div.page-break-container",
+                    getAttrs: (dom: HTMLElement) => {
+                        const footer = dom.querySelector('.page-break-footer');
+                        const pageNumText = footer?.textContent?.match(/\d+/);
+                        return {
+                            pageNumber: pageNumText ? parseInt(pageNumText[0], 10) : 1
+                        };
+                    }
+                }]
+            }
         };
 
         Object.values(styles).forEach((style: Style) => {
@@ -241,23 +575,52 @@ export const EditorCanvas: React.FC<{
                 nodes[style.key] = {
                     attrs: { id: { default: 0 }, data: { default: '' } },
                     group: "block", atom: true,
-                    toDOM: (node: Node) => ["div", { "data-style": style.key, "data-id": node.attrs.id }],
+                    // FIX: Use ProsemirrorNode alias
+                    toDOM: (node: ProsemirrorNode) => ["div", { "data-style": style.key, "data-id": node.attrs.id }],
                     parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, data: '' }) }]
                 };
             } else {
                 nodes[style.key] = {
                     attrs: { id: { default: 0 }, level: { default: 0 }, list: { default: null } },
                     content: "inline*", group: "block",
-                    toDOM: (node: Node) => ["div", { "class": styles[node.type.name as StyleKey]?.className || '', "data-style": style.key, "data-id": node.attrs.id, "data-level": node.attrs.level }, 0],
+                    // FIX: Use ProsemirrorNode alias
+                    toDOM: (node: ProsemirrorNode) => ["div", { "class": styles[node.type.name as StyleKey]?.className || '', "data-style": style.key, "data-id": node.attrs.id, "data-level": node.attrs.level }, 0],
                     parseDOM: [{ tag: `div[data-style="${style.key}"]`, getAttrs: (dom: HTMLElement) => ({ id: dom.dataset.id ? parseInt(dom.dataset.id, 10) : 0, level: dom.dataset.level ? parseInt(dom.dataset.level, 10) : 0 }) }]
                 };
             }
         });
-        return new Schema({ nodes, marks: { bold: basicSchema.spec.marks.get("strong"), italic: basicSchema.spec.marks.get("em") }});
+        
+        const marks = {
+            bold: basicSchema.spec.marks.get("strong"),
+            italic: basicSchema.spec.marks.get("em"),
+            footnote: {
+                attrs: { id: { default: '' }, content: { default: '' } },
+                inclusive: false,
+                // FIX: Correct toDOM signature for marks. Use `mark: Mark` instead of `node: Node`.
+// FIX: Added 'as const' to ensure the return type is inferred as a tuple, matching the DOMOutputSpec type expected by ProseMirror.
+                toDOM: (mark: Mark) => ["sup", {
+                    "data-footnote-id": mark.attrs.id,
+                    "data-footnote-content": mark.attrs.content,
+                    "class": "footnote-marker cursor-pointer",
+                    "title": "Klik for at se fodnote"
+                }] as const,
+                parseDOM: [{
+                    tag: "sup[data-footnote-id]",
+                    getAttrs: (dom: HTMLElement) => ({
+                        id: dom.getAttribute("data-footnote-id"),
+                        content: dom.getAttribute("data-footnote-content"),
+                    })
+                }]
+            }
+        };
+
+        return new Schema({ nodes, marks });
     }, [styles]);
 
-    const blocksToDoc = useCallback((blocks: DocumentBlock[]): Node => {
-        const pmNodes: Node[] = blocks.map(block => {
+    // FIX: Use ProsemirrorNode alias
+    const blocksToDoc = useCallback((blocks: DocumentBlock[]): ProsemirrorNode => {
+        // FIX: Use ProsemirrorNode alias
+        const pmNodes: ProsemirrorNode[] = blocks.map(block => {
             const type = editorSchema.nodes[block.style];
             if (!type) return null;
             if (type.isAtom) {
@@ -267,15 +630,18 @@ export const EditorCanvas: React.FC<{
             tempDiv.innerHTML = block.content;
             const contentFragment = DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content;
             return type.create({ id: block.id, level: block.level, list: block.list }, contentFragment);
-        }).filter((n): n is Node => n !== null);
+        // FIX: Use ProsemirrorNode alias
+        }).filter((n): n is ProsemirrorNode => n !== null);
+        // FIX: Use ProsemirrorNode alias
         return editorSchema.node('doc', null, pmNodes);
     }, [editorSchema]);
 
-    const docToBlocks = useCallback((doc: Node): DocumentBlock[] => {
+    // FIX: Use ProsemirrorNode alias
+    const docToBlocks = useCallback((doc: ProsemirrorNode): DocumentBlock[] => {
         const blocks: DocumentBlock[] = [];
         const domSerializer = DOMSerializer.fromSchema(editorSchema);
         doc.forEach(node => {
-            if (node.type.name === 'page_break') return;
+            if (node.type.name === 'page_break') return; // Skip page breaks when serializing back to blocks
             let content = '';
             if (node.isAtom) {
                 content = node.attrs.data;
@@ -301,234 +667,6 @@ export const EditorCanvas: React.FC<{
             viewRef.current = null;
         }
 
-        class PaginationView {
-            private view: EditorView;
-            private debounceTimeout: number | undefined;
-            private measurementContainer: HTMLElement | null = null;
-            private domSerializer: DOMSerializer;
-            private styles: Record<StyleKey, Style>;
-
-            constructor(view: EditorView, styles: Record<StyleKey, Style>) {
-                this.view = view;
-                this.styles = styles;
-                this.domSerializer = DOMSerializer.fromSchema(view.state.schema);
-                this.recalculate(view.state);
-            }
-
-            update(view: EditorView, prevState: EditorState) {
-                if (!prevState.doc.eq(view.state.doc) || !prevState.selection.eq(view.state.selection)) {
-                    this.recalculate(view.state);
-                }
-            }
-            
-            private ensureMeasurementContainer() {
-                if (!this.measurementContainer) {
-                    this.measurementContainer = document.createElement('div');
-                    this.measurementContainer.className = 'ProseMirror prosemirror-styled-content';
-                    this.measurementContainer.style.position = 'absolute';
-                    this.measurementContainer.style.top = '-9999px';
-                    this.measurementContainer.style.left = '-9999px';
-                    this.measurementContainer.style.whiteSpace = 'pre-wrap';
-                    this.measurementContainer.style.overflowWrap = 'break-word';
-                    document.body.appendChild(this.measurementContainer);
-                }
-                const editorContentWidth = this.view.dom.clientWidth;
-                 if (editorContentWidth > 0) {
-                   this.measurementContainer.style.width = `${editorContentWidth}px`;
-                }
-            }
-
-            private measureNodeFallback(node: Node): number {
-                this.ensureMeasurementContainer();
-                if (!this.measurementContainer) return 20;
-
-                const domNode = this.domSerializer.serializeNode(node);
-                this.measurementContainer.appendChild(domNode);
-                const element = this.measurementContainer.lastElementChild as HTMLElement;
-                if (!element) {
-                    this.measurementContainer.innerHTML = '';
-                    return 20;
-                }
-                const style = window.getComputedStyle(element);
-                const marginTop = parseFloat(style.marginTop) || 0;
-                const marginBottom = parseFloat(style.marginBottom) || 0;
-                const height = element.offsetHeight + marginTop + marginBottom;
-                this.measurementContainer.innerHTML = '';
-                return height;
-            }
-
-            private findSplitPoint(node: Node, availableHeight: number): number {
-                if (!node.isTextblock || node.content.size === 0 || availableHeight <= 5) {
-                    return -1;
-                }
-            
-                let low = 0;
-                let high = node.content.size;
-                let bestCharSplit = -1;
-            
-                while (low <= high) {
-                    const mid = Math.floor((low + high) / 2);
-                    if (mid === 0) {
-                        low = mid + 1;
-                        continue;
-                    }
-                    const slicedNode = node.copy(node.content.cut(0, mid));
-                    const measuredHeight = this.measureNodeFallback(slicedNode);
-            
-                    if (measuredHeight <= availableHeight) {
-                        bestCharSplit = mid;
-                        low = mid + 1;
-                    } else {
-                        high = mid - 1;
-                    }
-                }
-            
-                if (bestCharSplit <= 0) {
-                    return -1;
-                }
-            
-                const text = node.textContent;
-                const textSlice = text.substring(0, bestCharSplit);
-                const lastSpace = textSlice.lastIndexOf(' ');
-                const lastNewline = textSlice.lastIndexOf('\n');
-                
-                const boundary = Math.max(lastSpace, lastNewline);
-            
-                if (boundary > 0) {
-                    return boundary + 1;
-                }
-            
-                if (bestCharSplit > 0) {
-                    return bestCharSplit;
-                }
-                
-                return -1;
-            }
-
-            recalculate(state: EditorState) {
-                window.clearTimeout(this.debounceTimeout);
-                this.debounceTimeout = window.setTimeout(() => {
-                    if (!viewRef.current) return;
-                    
-                    const pageHeightPx = getPixelHeightForUnit(layoutSettings.paperHeight);
-                    if (pageHeightPx <= 0) return;
-                    
-                    const paddingBottomPx = getPixelHeightForUnit(layoutSettings.marginBottom);
-                    const paddingTopPx = getPixelHeightForUnit(layoutSettings.marginTop);
-                    const contentHeightPerPage = pageHeightPx - paddingTopPx - paddingBottomPx;
-
-                    const initialTr = this.view.state.tr;
-                    let cleanDoc = this.view.state.doc;
-
-                    // Pass 1: Remove all existing page breaks.
-                    let pageBreakFound = false;
-                    initialTr.doc.descendants((node, pos) => {
-                        if (node.type.name === 'page_break') {
-                            initialTr.delete(pos, pos + node.nodeSize);
-                            pageBreakFound = true;
-                        }
-                    });
-
-                    if (pageBreakFound) {
-                        cleanDoc = initialTr.doc;
-                    }
-
-                    const newContent: Node[] = [];
-                    let pageContentHeight = 0;
-
-                    const processNode = (node: Node) => {
-                        const nodeHeight = this.measureNodeFallback(node);
-
-                        if (pageContentHeight + nodeHeight <= contentHeightPerPage) {
-                            newContent.push(node);
-                            pageContentHeight += nodeHeight;
-                            return;
-                        }
-
-                        const availableHeight = contentHeightPerPage - pageContentHeight;
-                        const splitIndex = this.findSplitPoint(node, availableHeight);
-
-                        if (splitIndex > 0 && splitIndex < node.content.size) {
-                            const part1 = node.copy(node.content.cut(0, splitIndex));
-                            newContent.push(part1);
-                            
-                            let remainder = node.copy(node.content.cut(splitIndex));
-                            
-                            const styleInfo = this.styles[node.type.name as StyleKey];
-                            const isHeading = styleInfo?.level !== undefined && (styleInfo.key.includes('heading') || styleInfo.key === 'kapitel' || styleInfo.key === 'del');
-
-                            if (isHeading) {
-                                const bodyType = this.view.state.schema.nodes.body;
-                                if (bodyType) {
-                                    // Fix: `NodeType` does not have a `defaultAttrs` property.
-                                    // The `create` method automatically merges provided attributes with the defaults from the schema.
-                                    const newAttrs = { id: Date.now() + Math.random() };
-                                    remainder = bodyType.create(newAttrs, remainder.content, remainder.marks);
-                                }
-                            }
-
-                            while (true) {
-                                newContent.push(this.view.state.schema.nodes.page_break.create());
-                                const remainderHeight = this.measureNodeFallback(remainder);
-
-                                if (remainderHeight <= contentHeightPerPage) {
-                                    newContent.push(remainder);
-                                    pageContentHeight = remainderHeight;
-                                    break;
-                                }
-
-                                const nextSplitIndex = this.findSplitPoint(remainder, contentHeightPerPage);
-                                if (nextSplitIndex > 0 && nextSplitIndex < remainder.content.size) {
-                                    const nextPart = remainder.copy(remainder.content.cut(0, nextSplitIndex));
-                                    newContent.push(nextPart);
-                                    remainder = remainder.copy(remainder.content.cut(nextSplitIndex));
-                                } else {
-                                    newContent.push(remainder);
-                                    pageContentHeight = remainderHeight;
-                                    break;
-                                }
-                            }
-                        } else {
-                            if (pageContentHeight > 0) {
-                                newContent.push(this.view.state.schema.nodes.page_break.create());
-                            }
-                            newContent.push(node);
-                            pageContentHeight = nodeHeight;
-                        }
-                    };
-
-                    cleanDoc.forEach(processNode);
-                    
-                    const finalTr = this.view.state.tr.replaceWith(0, this.view.state.doc.content.size, newContent);
-
-                    if (!finalTr.doc.eq(this.view.state.doc)) {
-                        this.view.dispatch(finalTr);
-                    }
-
-                    requestAnimationFrame(() => {
-                        if (!viewRef.current) return;
-                        const totalHeight = viewRef.current.dom.scrollHeight;
-                        const newPageCount = pageHeightPx > 0 ? Math.max(1, Math.ceil(totalHeight / pageHeightPx)) : 1;
-                        onPaginationChange(newPageCount);
-                    });
-
-                }, 200);
-            }
-
-            destroy() {
-                window.clearTimeout(this.debounceTimeout);
-                 if (this.measurementContainer) {
-                    document.body.removeChild(this.measurementContainer);
-                    this.measurementContainer = null;
-                }
-            }
-        }
-
-        const paginationPlugin = new Plugin({
-            key: paginationPluginKey,
-            view: (editorView) => new PaginationView(editorView, styles),
-        });
-
         const state = EditorState.create({
             doc: blocksToDoc(blocks),
             plugins: [
@@ -540,14 +678,81 @@ export const EditorCanvas: React.FC<{
                     "Mod-b": toggleMark(editorSchema.marks.bold), "Mod-i": toggleMark(editorSchema.marks.italic),
                 }),
                 dropCursor(), gapCursor(),
-                paginationPlugin,
+                createFootnotePlugin(editorSchema),
                 new Plugin({
+                    key: new PluginKey('apiPlugin'),
                     view(editorView) {
                         if (editorApiRef) {
                             editorApiRef.current = {
                                 applyStyle: (style) => { const type = editorSchema.nodes[style]; if (type) setBlockType(type)(editorView.state, editorView.dispatch); },
                                 addBlock: (style) => { const { state, dispatch } = editorView; const type = editorSchema.nodes[style]; const endPos = state.doc.content.size; const tr = state.tr.insert(endPos, type.create({ id: Date.now() })); dispatch(tr); },
-                                removeEmptyBlocks: () => { /* TODO */ }, search: () => { /* TODO */ }, goToSearchResult: () => { /* TODO */ },
+                                addFootnote: () => {
+                                    const { state, dispatch } = editorView;
+                                    const { from, to } = state.selection;
+                                    if (from === to) return;
+                                    
+                                    const content = prompt("Indtast fodnotetekst:");
+                                    if (content) {
+                                        const id = `fn-${Date.now()}`;
+                                        const footnoteMark = editorSchema.marks.footnote.create({ id, content });
+                                        const tr = state.tr.addMark(from, to, footnoteMark);
+                                        dispatch(tr);
+                                    }
+                                },
+                                removeEmptyBlocks: () => {
+                                    const { state, dispatch } = editorView;
+                                    const { doc } = state;
+                                    let tr = state.tr;
+                                    let modified = false;
+                                    
+                                    const positionsToDelete: number[] = [];
+                            
+                                    doc.forEach((node, pos) => {
+                                        if (node.isBlock && !node.isAtom && node.content.size === 0) {
+                                            positionsToDelete.push(pos);
+                                        }
+                                    });
+                                    
+                                    if (positionsToDelete.length === doc.childCount && doc.childCount > 0) {
+                                        positionsToDelete.pop(); 
+                                    }
+                            
+                                    if (positionsToDelete.length > 0) {
+                                        modified = true;
+                                        for (let i = positionsToDelete.length - 1; i >= 0; i--) {
+                                            const pos = positionsToDelete[i];
+                                            const node = doc.nodeAt(pos);
+                                            if (node) {
+                                                tr.delete(pos, pos + node.nodeSize);
+                                            }
+                                        }
+                                    }
+                            
+                                    if (modified) {
+                                        dispatch(tr);
+                                    }
+                                },
+                                insertLoremIpsum: (count: number) => {
+                                    const { state, dispatch } = editorView;
+                                    const newBlocks = generateLoremIpsumBlocks(count, styles, documentType);
+                                    // FIX: Use ProsemirrorNode alias
+                                    const newNodes = newBlocks.map(block => {
+                                        const type = editorSchema.nodes[block.style];
+                                        if (!type) return null;
+                                        const tempDiv = document.createElement('div');
+                                        tempDiv.innerHTML = block.content;
+                                        const contentFragment = DOMParser.fromSchema(editorSchema).parseSlice(tempDiv).content;
+                                        return type.create({ id: block.id, level: block.level }, contentFragment);
+                                    // FIX: Use ProsemirrorNode alias
+                                    }).filter((n): n is ProsemirrorNode => n !== null);
+
+                                    if (newNodes.length > 0) {
+                                        const fragment = Fragment.from(newNodes);
+                                        const tr = state.tr.replaceWith(0, state.doc.content.size, fragment);
+                                        dispatch(tr);
+                                    }
+                                },
+                                search: () => { /* TODO */ }, goToSearchResult: () => { /* TODO */ },
                                 scrollToBlock: (blockId) => {
                                     const { doc } = editorView.state; let targetPos = -1;
                                     doc.forEach((node, pos) => { if (node.attrs.id === blockId) targetPos = pos; });
@@ -556,6 +761,33 @@ export const EditorCanvas: React.FC<{
                                 focusTitle: () => editorView.dom.blur(),
                                 undo: () => undo(editorView.state, editorView.dispatch),
                                 redo: () => redo(editorView.state, editorView.dispatch),
+                                runPagination: (startPage: number) => {
+                                    const command = createPaginationCommand(layoutSettings, styles, startPage);
+                                    command(editorView.state, editorView.dispatch);
+                                },
+                                removePagination: () => {
+                                    const { state, dispatch } = editorView;
+                                    const pageBreakType = editorSchema.nodes.page_break;
+                                    if (!pageBreakType) return;
+
+                                    let tr = state.tr;
+                                    const positionsToRemove: number[] = [];
+                                    state.doc.descendants((node, pos) => {
+                                        if (node.type === pageBreakType) {
+                                            positionsToRemove.push(pos);
+                                        }
+                                    });
+
+                                    if (positionsToRemove.length === 0) return;
+
+                                    for (let i = positionsToRemove.length - 1; i >= 0; i--) {
+                                        tr = tr.delete(positionsToRemove[i], positionsToRemove[i] + 1);
+                                    }
+
+                                    if (dispatch && tr.docChanged) {
+                                        dispatch(tr.setMeta('addToHistory', false));
+                                    }
+                                }
                             };
                         }
                         return {};
@@ -587,19 +819,39 @@ export const EditorCanvas: React.FC<{
                 const newState = viewRef.current.state.apply(tr);
                 viewRef.current.updateState(newState);
 
+                const { selection } = newState;
+                const node = selection.$anchor.node(1);
+                const selectionInfo: { 
+                    activeBlockId: number | null; 
+                    canUndo: boolean; 
+                    canRedo: boolean; 
+                    isPaginated?: boolean;
+                    totalPages?: number;
+                    isSelectionEmpty?: boolean;
+                } = { 
+                    activeBlockId: node?.attrs.id || null,
+                    canUndo: undo(newState),
+                    canRedo: redo(newState),
+                    isSelectionEmpty: newState.selection.empty,
+                };
+
                 if (tr.docChanged) {
                     isUpdatingFromOutside.current = true;
                     onBlocksChange(docToBlocks(newState.doc));
                     requestAnimationFrame(() => { isUpdatingFromOutside.current = false; });
+                    
+                    let pageBreakCount = 0;
+                    newState.doc.descendants(node => {
+                        if (node.type.name === 'page_break') {
+                            pageBreakCount++;
+                        }
+                    });
+                    const hasPageBreaks = pageBreakCount > 0;
+                    selectionInfo.isPaginated = hasPageBreaks;
+                    selectionInfo.totalPages = hasPageBreaks ? pageBreakCount + 1 : 1;
                 }
                 
-                const { selection } = newState;
-                const node = selection.$anchor.node(1);
-                onSelectionChange({ 
-                    activeBlockId: node?.attrs.id || null,
-                    canUndo: undo(newState),
-                    canRedo: redo(newState)
-                });
+                onSelectionChange(selectionInfo);
             },
         });
         viewRef.current = view;
@@ -609,19 +861,31 @@ export const EditorCanvas: React.FC<{
                 viewRef.current.destroy();
                 viewRef.current = null;
             }
+            if (editorApiRef.current) {
+                editorApiRef.current = null;
+            }
         };
-    }, [styles, layoutSettings, onPaginationChange, editorApiRef, onSelectionChange, editorSchema, blocksToDoc, docToBlocks]);
+    }, [styles, editorApiRef, onSelectionChange, editorSchema, blocksToDoc, docToBlocks, layoutSettings, documentType]);
 
     useEffect(() => {
         if (viewRef.current && !isUpdatingFromOutside.current && blocks) {
             const state = viewRef.current.state;
-            const newDoc = blocksToDoc(blocks);
-            if (!newDoc.eq(state.doc)) {
-                const tr = state.tr.replaceWith(0, state.doc.content.size, newDoc.content);
+            // FIX: Use ProsemirrorNode alias
+            const newDocFromProps = blocksToDoc(blocks);
+
+            // Create versions of the documents without page breaks for comparison.
+            // FIX: Use ProsemirrorNode alias
+            const currentDocStripped = stripPageBreaks(state.doc, editorSchema);
+            // FIX: Use ProsemirrorNode alias
+            const newDocStripped = stripPageBreaks(newDocFromProps, editorSchema);
+
+            // Only sync if the actual content (sans page breaks) is different.
+            if (!newDocStripped.eq(currentDocStripped)) {
+                const tr = state.tr.replaceWith(0, state.doc.content.size, newDocFromProps.content).setMeta('isSync', true);
                 viewRef.current.dispatch(tr);
             }
         }
-    }, [blocks, blocksToDoc]);
+    }, [blocks, blocksToDoc, editorSchema]);
 
     return <div ref={editorRef} className="prosemirror-editor prosemirror-styled-content" />;
 };

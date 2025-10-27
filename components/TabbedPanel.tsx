@@ -1,10 +1,11 @@
-
 import React, { useState } from 'react';
 import type { TabProps } from '../types';
 
 interface TabbedPanelProps {
   children: React.ReactElement<TabProps>[];
 }
+
+export const Tab: React.FC<TabProps> = ({ children }) => <>{children}</>;
 
 export const TabbedPanel: React.FC<TabbedPanelProps> = ({ children }) => {
   // Safely initialize activeTab, returning an empty string if no children are present.

@@ -183,38 +183,29 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({ metadata, onMetada
                 onChange={(e) => handleMetadataFieldChange('bookType', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
               >
-                {BOOK_TYPES.map(type => (
-                  <option key={type} value={type}>{type}</option>
-                ))}
+                {BOOK_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
               </select>
             </div>
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-700 mt-4">
-                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Omslag</label>
-                {bookMetadata.coverImageSrc ? (
-                    <div className="mt-1">
-                        <img src={bookMetadata.coverImageSrc} alt="Omslags-preview" className="w-full h-auto max-h-48 object-contain rounded border bg-gray-100 dark:bg-gray-700 dark:border-gray-600 mb-2" />
-                        <button
-                            onClick={() => handleMetadataFieldChange('coverImageSrc', '')}
-                            className="w-full text-sm text-red-600 hover:text-red-800"
-                        >
-                            Fjern omslag
-                        </button>
-                    </div>
-                ) : (
-                    <button
-                        onClick={() => coverInputRef.current?.click()}
-                        className="w-full mt-1 flex justify-center py-2 px-4 border border-dashed border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700/50 hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                        Upload billede
-                    </button>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">Omslagsbillede</label>
+              <div className="flex items-center gap-2">
+                {bookMetadata.coverImageSrc && (
+                  <img src={bookMetadata.coverImageSrc} alt="Omslag" className="w-16 h-20 object-cover rounded"/>
                 )}
+                <button
+                  onClick={() => coverInputRef.current?.click()}
+                  className="px-3 py-2 text-sm border border-gray-300 bg-white dark:border-gray-600 dark:bg-gray-700 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-600"
+                >
+                  {bookMetadata.coverImageSrc ? 'Skift billede' : 'Upload billede'}
+                </button>
                 <input
-                    type="file"
-                    ref={coverInputRef}
-                    onChange={handleCoverUpload}
-                    className="hidden"
-                    accept="image/png, image/jpeg, image/gif"
+                  type="file"
+                  ref={coverInputRef}
+                  onChange={handleCoverUpload}
+                  className="hidden"
+                  accept="image/png, image/jpeg"
                 />
+              </div>
             </div>
           </>
         )}

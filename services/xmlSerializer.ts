@@ -1,4 +1,3 @@
-// Fix: Corrected import path.
 import type { DocumentBlock, StyleKey, TableData, ImageData, Metadata, BookMetadata, Footnote, Style } from '../types';
 
 const escapeXml = (text: string): string => {
@@ -13,15 +12,46 @@ const escapeXml = (text: string): string => {
     .replace(/'/g, '&apos;');
 };
 
-const processInlineFormatting = (html: string): string => {
-    // A simple regex-based converter. For more complex cases, a DOM parser on the server would be better.
-    let xmlContent = html;
+const processInlineFormatting = (html: string, footnoteMap: Map<string, { id: string, content: string }>): string => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+
+    // Process footnotes first and replace them with a placeholder
+    const footnotes = Array.from(tempDiv.querySelectorAll('sup[data-footnote-id]'));
+    footnotes.forEach((sup, index) => {
+        const id = sup.getAttribute('data-footnote-id');
+        const content = sup.getAttribute('data-footnote-content');
+        if (id && content) {
+            footnoteMap.set(id, { id, content });
+            const xref = document.createElement('xref');
+            xref.setAttribute('ref-type', 'fn');
+            xref.setAttribute('rid', id);
+            // The number is visual only, determined by order, not stored here.
+            // The serializer will count them later.
+            sup.replaceWith(xref);
+        }
+    });
+
+    let xmlContent = tempDiv.innerHTML;
     // Bold
     xmlContent = xmlContent.replace(/<strong>(.*?)<\/strong>/g, '<bold>$1</bold>');
     xmlContent = xmlContent.replace(/<b>(.*?)<\/b>/g, '<bold>$1</bold>');
     // Italic
     xmlContent = xmlContent.replace(/<em>(.*?)<\/em>/g, '<italic>$1</italic>');
     xmlContent = xmlContent.replace(/<i>(.*?)<\/i>/g, '<italic>$1</italic>');
+    // Footnote placeholders
+    xmlContent = xmlContent.replace(/<xref (.*?)><\/xref>/g, (match, attrs) => {
+      // Re-add number visually based on map order
+      const ridMatch = attrs.match(/rid="([^"]+)"/);
+      if (ridMatch) {
+        const id = ridMatch[1];
+        const index = Array.from(footnoteMap.keys()).indexOf(id);
+        if (index !== -1) {
+          return `<xref ${attrs}>${index + 1}</xref>`;
+        }
+      }
+      return `<xref ${attrs}></xref>`;
+    });
 
     // Strip any remaining HTML tags and escape
     const plainText = xmlContent.replace(/<(?!\/?(bold|italic|xref))[^>]*>/g, '');
@@ -30,17 +60,6 @@ const processInlineFormatting = (html: string): string => {
     return plainText.replace(/&(?!(amp|lt|gt|quot|apos);)/g, '&amp;')
         .replace(/<(?!\/?(bold|italic|xref))/g, '&lt;')
         .replace(/>/g, '&gt;');
-};
-
-const processFootnotes = (content: string, footnotes: Footnote[], footnoteMap: Map<string, Footnote>): string => {
-    return content.replace(/<sup data-footnote-id="([^"]+)">(\d+)<\/sup>/g, (match, id, number) => {
-        const footnote = footnotes.find(fn => fn.id === id);
-        if (footnote) {
-            footnoteMap.set(id, footnote);
-            return `<xref ref-type="fn" rid="${id}">${number}</xref>`;
-        }
-        return match;
-    });
 };
 
 const isListItem = (style: StyleKey) => style === 'ordered_list_item' || style === 'unordered_list_item';
@@ -84,10 +103,7 @@ const generateListTree = (listBlocks: DocumentBlock[], format: 'jats' | 'bits', 
 
     listBlocks.forEach(block => {
         const level = block.level || 0;
-        let processedContent = processInlineFormatting(block.content);
-        if (block.footnotes) {
-            processedContent = processFootnotes(processedContent, block.footnotes, footnoteMap);
-        }
+        let processedContent = processInlineFormatting(block.content, footnoteMap);
 
         let parentList = listStack[listStack.length - 1];
         while (level < parentList.level) {
@@ -170,14 +186,14 @@ const buildXmlFragmentTree = (blocks: DocumentBlock[], format: 'jats' | 'bits', 
                                     tag: 'thead',
                                     children: [{
                                         tag: 'tr',
-                                        children: tableData.rows[0]?.map(cell => ({ tag: 'th', children: [{tag: 'p', content: processInlineFormatting(cell.content), isHtml: true}] })) || []
+                                        children: tableData.rows[0]?.map(cell => ({ tag: 'th', children: [{tag: 'p', content: processInlineFormatting(cell.content, footnoteMap), isHtml: true}] })) || []
                                     }]
                                 },
                                 { // tbody
                                     tag: 'tbody',
                                     children: tableData.rows.slice(1).map(row => ({
                                         tag: 'tr',
-                                        children: row.map(cell => ({ tag: 'td', children: [{tag: 'p', content: processInlineFormatting(cell.content), isHtml: true}] }))
+                                        children: row.map(cell => ({ tag: 'td', children: [{tag: 'p', content: processInlineFormatting(cell.content, footnoteMap), isHtml: true}] }))
                                     }))
                                 }
                             ]
@@ -227,11 +243,8 @@ const buildXmlFragmentTree = (blocks: DocumentBlock[], format: 'jats' | 'bits', 
             continue; // continue to next block
         }
         
-        let content = processInlineFormatting(block.content);
+        let content = processInlineFormatting(block.content, footnoteMap);
         let isHtml = true; // Since processInlineFormatting produces XML tags, we treat it as HTML
-        if (block.footnotes && block.footnotes.length > 0) {
-            content = processFootnotes(content, block.footnotes, footnoteMap);
-        }
             
         const element = { tag: style[tagKey], content, attributes: style.attributes, isHtml }; // Pass attributes here
 
@@ -285,9 +298,8 @@ const buildXmlFragmentTree = (blocks: DocumentBlock[], format: 'jats' | 'bits', 
 const renderXml = (nodes: any[], indent = ''): string => {
     return nodes.map(node => {
         if (!node || !node.tag) return '';
-        const attrs = node.attributes
-            ? ' ' + Object.entries(node.attributes).map(([key, value]) => `${key}="${escapeXml(value as string)}"`).join(' ')
-            : '';
+        const attrsString = node.attributes ? Object.entries(node.attributes).map(([key, value]) => `${key}="${escapeXml(value as string)}"`).join(' ') : '';
+        const attrs = attrsString ? ` ${attrsString}` : '';
 
         if (node.content && node.children && node.children.length > 0) {
              console.error("Node cannot have both content and children", node);

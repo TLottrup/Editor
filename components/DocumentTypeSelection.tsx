@@ -1,5 +1,4 @@
 import React from 'react';
-// Fix: Corrected import path.
 import type { DocumentType } from '../types';
 import { BookIcon, JournalIcon } from './icons';
 

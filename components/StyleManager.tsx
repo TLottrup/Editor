@@ -33,7 +33,6 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ styles, setStyles, o
       setIsNew(false);
       // Convert attributes object to an array of EditableAttribute for internal management
       const newAttributeList: EditableAttribute[] = Object.entries(currentStyle.attributes || {}).map(([key, value]) => ({
-        // Fix: Ensure the 'id' is a string as defined in EditableAttribute
         id: `${Date.now()}-${Math.random()}`, // Generate a stable string ID for React key
         key,
         value: value as string,
@@ -234,131 +233,134 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ styles, setStyles, o
                 </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="nestingParentJats" className="block text-sm font-medium text-gray-600 dark:text-gray-400">JATS Forælder (valgfri)</label>
-                  <input type="text" name="nestingParentJats" id="nestingParentJats" value={formData.nestingParentJats} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" />
-                </div>
-                 <div>
-                  <label htmlFor="nestingParentBits" className="block text-sm font-medium text-gray-600 dark:text-gray-400">BITS Forælder (valgfri)</label>
-                  <input type="text" name="nestingParentBits" id="nestingParentBits" value={formData.nestingParentBits} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" />
-                </div>
+              <div>
+                  <label htmlFor="nestingParentJats" className="block text-sm font-medium text-gray-600 dark:text-gray-400">JATS Nesting Parent</label>
+                  <input type="text" name="nestingParentJats" id="nestingParentJats" value={formData.nestingParentJats || ''} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" />
+              </div>
+              <div>
+                  <label htmlFor="nestingParentBits" className="block text-sm font-medium text-gray-600 dark:text-gray-400">BITS Nesting Parent</label>
+                  <input type="text" name="nestingParentBits" id="nestingParentBits" value={formData.nestingParentBits || ''} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" />
+              </div>
             </div>
+
             <div className="grid grid-cols-2 gap-4">
-             <div>
-                <label htmlFor="level" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Hierarkiniveau (for overskrifter)</label>
-                <input type="number" name="level" id="level" value={formData.level === undefined ? '' : formData.level} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" placeholder="Valgfri" />
-            </div>
-            {isHeadingStyle && (
                 <div>
-                    <label htmlFor="matterType" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Materietype (for overskrifter)</label>
-                    <select
-                        name="matterType"
-                        id="matterType"
-                        value={formData.matterType || ''}
-                        onChange={handleInputChange}
-                        className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm"
-                    >
-                        <option value="">Ingen (standard body)</option>
-                        <option value="front">Frontmatter (JATS/BITS)</option>
-                        <option value="body">Bodymatter (JATS/BITS)</option>
-                        <option value="back">Backmatter (JATS/BITS)</option>
-                        <option value="chapter">Kapitel (BITS-specifik)</option>
+                    <label htmlFor="level" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Hierarkiniveau (for overskrifter)</label>
+                    <input type="number" name="level" id="level" value={formData.level === undefined ? '' : formData.level} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" />
+                </div>
+                <div>
+                    <label htmlFor="matterType" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Matter Type (JATS/BITS)</label>
+                    <select name="matterType" id="matterType" value={formData.matterType || ''} onChange={handleInputChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm">
+                        <option value="">Ingen</option>
+                        <option value="front">Front Matter</option>
+                        <option value="body">Body Matter</option>
+                        <option value="back">Back Matter</option>
+                        <option value="chapter">Chapter (BITS)</option>
                     </select>
                 </div>
-            )}
             </div>
 
             {isListItem && (
-                <div className="pt-4 border-t dark:border-gray-700 mt-4">
-                    <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">Standardlisteattributter</h4>
-                    {formData.key === 'ordered_list_item' && (
-                        <div className="space-y-4">
-                            <div>
-                                <label htmlFor="listStyle" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Typografi</label>
-                                <select name="style" id="listStyle" value={formData.defaultListAttributes?.style || 'decimal'} onChange={handleListAttributeChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm">
-                                    {ORDERED_LIST_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="listStart" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Startnummer</label>
-                                <input type="number" name="start" id="listStart" value={formData.defaultListAttributes?.start || ''} onChange={handleListAttributeChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm" placeholder="1"/>
-                            </div>
-                            <div className="flex items-center">
-                                <input type="checkbox" name="reversed" id="listReversed" checked={!!formData.defaultListAttributes?.reversed} onChange={handleListAttributeChange} className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"/>
-                                <label htmlFor="listReversed" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Omvendt rækkefølge</label>
-                            </div>
-                        </div>
-                    )}
-                    {formData.key === 'unordered_list_item' && (
-                         <div>
-                            <label htmlFor="listStyle" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Typografi</label>
-                            <select name="style" id="listStyle" value={formData.defaultListAttributes?.style || 'disc'} onChange={handleListAttributeChange} className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm">
-                                 {UNORDERED_LIST_STYLES.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                    )}
+              <div className="p-3 border dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                <h4 className="text-md font-semibold mb-2">Listeindstillinger</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="style" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Listestil</label>
+                    <select
+                      name="style"
+                      id="style"
+                      value={formData.defaultListAttributes?.style || ''}
+                      onChange={handleListAttributeChange}
+                      className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm"
+                    >
+                      <option value="">Standard</option>
+                      {(formData.key === 'ordered_list_item' ? ORDERED_LIST_STYLES : UNORDERED_LIST_STYLES).map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {formData.key === 'ordered_list_item' && (
+                    <div>
+                      <label htmlFor="start" className="block text-sm font-medium text-gray-600 dark:text-gray-400">Startnummer</label>
+                      <input
+                        type="number"
+                        name="start"
+                        id="start"
+                        value={formData.defaultListAttributes?.start || ''}
+                        onChange={handleListAttributeChange}
+                        className="mt-1 w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm"
+                      />
+                    </div>
+                  )}
+                  {formData.key === 'ordered_list_item' && (
+                    <div className="flex items-center col-span-2">
+                        <input
+                            type="checkbox"
+                            name="reversed"
+                            id="reversed"
+                            checked={!!formData.defaultListAttributes?.reversed}
+                            onChange={handleListAttributeChange}
+                            className="h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-700"
+                        />
+                        <label htmlFor="reversed" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Omvendt rækkefølge
+                        </label>
+                    </div>
+                  )}
                 </div>
+              </div>
             )}
-
-
-            {/* XML Attributter Sektion */}
-            <div className="pt-4 border-t dark:border-gray-700 mt-4">
-                <h4 className="text-md font-semibold text-gray-700 dark:text-gray-300 mb-2">XML Attributter (valgfri)</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Tilføj brugerdefinerede attributter til XML-tagget for denne typografi.</p>
+            
+            <div className="p-3 border dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-700/50">
+                <h4 className="text-md font-semibold mb-2">Brugerdefinerede XML Attributter</h4>
                 <div className="space-y-2">
-                    {attributeList.map(attr => (
+                    {attributeList.map((attr, index) => (
                         <div key={attr.id} className="flex items-center gap-2">
                             <input
                                 type="text"
+                                placeholder="Nøgle"
                                 value={attr.key}
                                 onChange={(e) => handleAttributeChange(attr.id, 'key', e.target.value)}
-                                className="w-1/3 px-3 py-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                placeholder="Attribut nøgle"
-                                aria-label="Attribut nøgle"
+                                className="w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm text-sm"
                             />
                             <input
                                 type="text"
+                                placeholder="Værdi"
                                 value={attr.value}
                                 onChange={(e) => handleAttributeChange(attr.id, 'value', e.target.value)}
-                                className="w-2/3 px-3 py-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-sm"
-                                placeholder="Attribut værdi"
-                                aria-label="Attribut værdi"
+                                className="w-full p-2 border border-gray-300 bg-white dark:border-gray-700 dark:bg-gray-700 rounded-md shadow-sm text-sm"
                             />
-                            <button
-                                onClick={() => handleRemoveAttribute(attr.id)}
-                                className="p-2 text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-                                title="Fjern attribut"
-                                aria-label="Fjern attribut"
-                            >
+                            <button onClick={() => handleRemoveAttribute(attr.id)} className="p-2 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600">
                                 <TrashIcon className="h-4 w-4" />
                             </button>
                         </div>
                     ))}
-                    <button
-                        onClick={handleAddAttribute}
-                        className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium py-1 px-2 rounded"
-                        aria-label="Tilføj ny attribut"
-                    >
-                        <PlusIcon className="h-4 w-4" />
-                        Tilføj Attribut
-                    </button>
                 </div>
+                <button onClick={handleAddAttribute} className="mt-2 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium py-1 px-2 rounded">
+                    <PlusIcon className="h-4 w-4" />
+                    Tilføj Attribut
+                </button>
             </div>
+
 
           </main>
         </div>
-         <footer className="flex items-center justify-between p-4 border-t dark:border-gray-700">
-            <button
-              onClick={handleDelete}
-              disabled={isNew || Object.keys(styles).length === 1} // Disable delete if only one style left
-              className="flex items-center gap-2 text-sm bg-red-50 hover:bg-red-100 text-red-700 font-semibold py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <TrashIcon className="h-5 w-5" />
-              Slet
-            </button>
-            <button onClick={handleSave} className="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md transition-colors">
-              Gem Ændringer
-            </button>
+        <footer className="flex items-center justify-between p-4 border-t dark:border-gray-700">
+            <div>
+                {!isNew && selectedStyleKey && (
+                    <button onClick={handleDelete} className="bg-red-50 hover:bg-red-100 text-red-700 dark:bg-red-900/50 dark:hover:bg-red-900/80 dark:text-red-300 font-semibold py-2 px-4 rounded-md transition-colors">
+                        Slet
+                    </button>
+                )}
+            </div>
+            <div className="flex gap-3">
+                <button onClick={onClose} className="bg-gray-200 hover:bg-gray-300 text-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors">
+                    Annuller
+                </button>
+                <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors">
+                    {isNew ? 'Opret' : 'Gem Ændringer'}
+                </button>
+            </div>
         </footer>
       </div>
     </div>

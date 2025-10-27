@@ -1,7 +1,5 @@
-
-
 import React, { useRef, useEffect } from 'react';
-import { ImportIcon, PanelRightCloseIcon, PanelRightOpenIcon, PanelLeftOpenIcon, PanelLeftCloseIcon, UndoIcon, RedoIcon, BroomIcon, SunIcon, MoonIcon, SaveIcon } from './icons';
+import { ImportIcon, PanelRightCloseIcon, PanelRightOpenIcon, PanelLeftOpenIcon, PanelLeftCloseIcon, UndoIcon, RedoIcon, BroomIcon, SunIcon, MoonIcon, SaveIcon, PlusIcon, SparklesIcon } from './icons';
 import type { Metadata, DocumentType } from '../types';
 
 interface HeaderProps {
@@ -15,13 +13,16 @@ interface HeaderProps {
   canUndo: boolean;
   canRedo: boolean;
   onRemoveEmptyBlocks: () => void;
+  onGenerateLoremIpsum: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   metadata: Metadata;
   onMetadataChange: (update: React.SetStateAction<Metadata>) => void;
   documentType: DocumentType;
   onTitleFocus: () => void;
-  onSaveVersion: (name?: string) => void; // New prop for saving versions
+  onSaveVersion: (name?: string) => void;
+  onTogglePagination: () => void;
+  isPaginated: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({ 
@@ -35,13 +36,16 @@ export const Header: React.FC<HeaderProps> = ({
   canUndo,
   canRedo,
   onRemoveEmptyBlocks,
+  onGenerateLoremIpsum,
   theme,
   onToggleTheme,
   metadata,
   onMetadataChange,
   documentType,
   onTitleFocus,
-  onSaveVersion // Destructure new prop
+  onSaveVersion,
+  onTogglePagination,
+  isPaginated,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -74,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleSaveVersionClick = () => {
     const versionName = prompt("Indtast et navn for denne version (valgfrit):");
-    onSaveVersion(versionName === null ? undefined : versionName); // Pass undefined if prompt is cancelled
+    onSaveVersion(versionName === null ? undefined : versionName); // Pass undefined if cancelled
   };
 
   return (
@@ -87,6 +91,9 @@ export const Header: React.FC<HeaderProps> = ({
         >
           {isLeftSidebarOpen ? <PanelLeftCloseIcon className="h-5 w-5" /> : <PanelLeftOpenIcon className="h-5 w-5" />}
         </button>
+        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap">
+          Djøf Forlag - <span style={{color: 'oklch(58.8% 0.158 241.966)'}}>Drafter</span>
+        </h1>
         <div className="flex items-center gap-1">
             <button
               onClick={onUndo}
@@ -110,6 +117,13 @@ export const Header: React.FC<HeaderProps> = ({
               title="Fjern tomme blokke"
             >
               <BroomIcon className="h-5 w-5" />
+            </button>
+            <button
+              onClick={onGenerateLoremIpsum}
+              className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              title="Generer Lorem Ipsum tekst"
+            >
+              <SparklesIcon className="h-5 w-5" />
             </button>
         </div>
       </div>
@@ -138,6 +152,14 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
       
        <div className="flex items-center gap-4">
+        <button
+          onClick={onTogglePagination}
+          className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 font-semibold py-2 px-4 rounded-md transition-colors text-sm"
+          title={isPaginated ? "Fjern sidenumre fra dokumentet" : "Opdel dokumentet i sider med sidenumre"}
+        >
+          {isPaginated ? <BroomIcon className="h-5 w-5" /> : <PlusIcon className="h-5 w-5" />}
+          {isPaginated ? 'Fjern sidenumre' : 'Tilføj sidenumre'}
+        </button>
         <button
           onClick={handleSaveVersionClick} // New save button for version control
           className="flex items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:hover:bg-purple-900/80 dark:text-purple-300 font-semibold py-2 px-4 rounded-md transition-colors text-sm"

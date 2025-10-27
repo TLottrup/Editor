@@ -1,5 +1,3 @@
-
-
 // Fix: Provide full content for types.ts to resolve module import errors across the application.
 export type DocumentType = 'journal' | 'book';
 
@@ -91,7 +89,6 @@ export interface DocumentBlock {
   content: string; // For table/image, this will be JSON stringified data
   level?: number;
   list?: ListAttributes;
-  footnotes?: Footnote[];
 }
 
 export type BookType = 'Lovkommentar' | 'Håndbog' | 'Debatbog' | 'Afhandling' | 'Festskrift' | 'Lærebog';

@@ -1,8 +1,6 @@
-
 import React, { useRef, useState } from 'react';
-// Fix: Corrected import path.
 import type { DocumentBlock, Style, StyleKey, DocumentType, TableData, ImageData } from '../types';
-import { PlusIcon, TableIcon, ImageIcon, OrderedListIcon, UnorderedListIcon, SettingsIcon } from './icons';
+import { PlusIcon, TableIcon, ImageIcon, OrderedListIcon, UnorderedListIcon, SettingsIcon, FootnoteIcon } from './icons';
 
 interface StylePaletteProps {
   styles: Style[];
@@ -11,6 +9,8 @@ interface StylePaletteProps {
   documentType: DocumentType;
   selectedBlockIds: Set<number>;
   onApplyStyle: (styleKey: StyleKey) => void;
+  onAddFootnote: () => void;
+  isSelectionEmpty: boolean;
   disabledStyles: Set<StyleKey>;
   onOpenStyleManager: () => void;
 }
@@ -95,7 +95,7 @@ const StyleCategory: React.FC<{
     );
 };
 
-export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAddBlock, documentType, selectedBlockIds, onApplyStyle, disabledStyles, onOpenStyleManager }) => {
+export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAddBlock, documentType, selectedBlockIds, onApplyStyle, onAddFootnote, isSelectionEmpty, disabledStyles, onOpenStyleManager }) => {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<'text' | 'objects'>('text');
 
@@ -251,6 +251,17 @@ export const StylePalette: React.FC<StylePaletteProps> = ({ styles, blocks, onAd
             <div className="flex justify-between items-center">
               <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Billede</p>
               <ImageIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
+            </div>
+          </button>
+           <button
+            onClick={onAddFootnote}
+            disabled={isSelectionEmpty}
+            className="w-full text-left py-2 px-3 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group disabled:opacity-50 disabled:cursor-not-allowed"
+            title={isSelectionEmpty ? "Vælg tekst for at tilføje en fodnote" : "Tilføj fodnote til valgt tekst"}
+          >
+            <div className="flex justify-between items-center">
+              <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm">Tilføj Fodnote</p>
+              <FootnoteIcon className="h-5 w-5 text-gray-400 dark:text-gray-500 group-hover:text-blue-500 transition-colors" />
             </div>
           </button>
           <input

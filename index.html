@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Djøf Forlag XML Editor</title>
+    <title>Djøf Forlag - Drafter</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
@@ -22,6 +22,7 @@
     <script src="https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script id="jspdf-autotable" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
     <style id="dynamic-styles"></style>
     <style>
       /* CSS for placeholder text in empty contenteditables */
@@ -49,53 +50,107 @@
         background-color: rgba(59, 130, 246, 0.1);
       }
       
-      /* Page styling for editor view */
+      /* Styling for the page-like editor container */
       .editor-container {
-        margin-left: auto;
-        margin-right: auto;
-        background: transparent;
-        border-radius: 0;
-        box-shadow: none;
-        position: relative;
-        z-index: 2;
-      }
-      
-      /* New styles for pagination */
-      .pages-container {
-        position: relative;
-        margin-left: auto;
-        margin-right: auto;
-      }
-      .page-background {
-        position: absolute;
-        left: 0;
-        right: 0;
         margin-left: auto;
         margin-right: auto;
         background: #fff;
         box-shadow: 0 0 10px rgba(0,0,0,0.1);
-        z-index: 1;
         border-radius: 1px;
+        margin-top: 2rem;
+        margin-bottom: 2rem;
+        position: relative;
+      }
+
+      /* Header for Page 1, only shown when paginated */
+      .editor-container.paginated::before {
+        content: 'Start side ' attr(data-start-page);
+        position: absolute;
+        top: 0;
+        left: var(--page-margin-left, 2cm);
+        right: var(--page-margin-right, 2cm);
+        height: var(--page-margin-top, 2cm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        color: #6b7280;
+        font-size: 12px;
+        font-family: sans-serif;
         pointer-events: none;
       }
-      .page-footer {
+
+      /* Footer for the last page, only shown when paginated */
+      .editor-container.paginated::after {
+        content: 'Slut side ' attr(data-last-page);
         position: absolute;
-        left: 0;
-        right: 0;
-        margin-left: auto;
-        margin-right: auto;
-        text-align: center;
-        color: #9ca3af; /* gray-400 */
-        font-size: 0.75rem; /* text-xs */
-        z-index: 4;
-        pointer-events: none; /* So it doesn't interfere with editor clicks */
+        bottom: 0;
+        left: var(--page-margin-left, 2cm);
+        right: var(--page-margin-right, 2cm);
+        height: var(--page-margin-bottom, 2cm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        color: #6b7280;
+        font-size: 12px;
+        font-family: sans-serif;
+        pointer-events: none;
       }
-      .dark .page-background {
+
+      .dark .editor-container.paginated::before {
+          color: #9ca3af;
+      }
+      
+      .dark .editor-container.paginated::after {
+          color: #9ca3af;
+      }
+      
+      .dark .editor-container {
         background-color: #1f2937; /* gray-800 */
         border: 1px solid #374151; /* gray-700 */
       }
-      .dark .page-footer {
-        color: #6b7280; /* gray-500 */
+      
+      /* New Page Break Styling */
+      .page-break-container {
+        display: flex;
+        flex-direction: column;
+        margin-left: calc(-1 * var(--page-margin-left, 2cm));
+        margin-right: calc(-1 * var(--page-margin-right, 2cm));
+        user-select: none;
+        background-color: #fff; /* White paper background for header/footer */
+      }
+      .dark .page-break-container {
+        background-color: #1f2937; /* gray-800 */
+      }
+
+      .page-break-footer, .page-break-header {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        font-size: 12px;
+        font-family: sans-serif;
+        color: #6b7280;
+      }
+      .dark .page-break-footer, .dark .page-break-header {
+        color: #9ca3af;
+      }
+
+      .page-break-footer {
+        height: var(--page-margin-bottom, 2cm);
+      }
+
+      .page-break-header {
+        height: var(--page-margin-top, 2cm);
+      }
+
+      .page-break-gutter {
+        height: 20px;
+        background-color: #e5e7eb; /* gray-200 */
+      }
+      .dark .page-break-gutter {
+        background-color: #0f172a; /* slate-900 */
       }
 
       /* CSS for nested lists */
@@ -177,6 +232,37 @@
         content: "";
       }
 
+      /* Footnote Styling */
+      .footnote-marker-number {
+        display: inline-block;
+        vertical-align: super;
+        font-size: 0.8em;
+        color: #3b82f6; /* blue-500 */
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+        margin-left: 2px;
+      }
+
+      .footnote-popover {
+        position: absolute;
+        z-index: 100;
+        padding: 0.75rem;
+        background-color: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        max-width: 300px;
+        font-size: 0.875rem;
+        line-height: 1.25rem;
+        color: #374151;
+      }
+
+      .dark .footnote-popover {
+        background-color: #374151; /* gray-700 */
+        border-color: #4b5563; /* gray-600 */
+        color: #d1d5db; /* gray-300 */
+      }
     </style>
   <script type="importmap">
 {
